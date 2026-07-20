@@ -12,7 +12,7 @@ export async function PUT(
     const { id } = await params;
     const body = await request.json();
 
-    // Support partial update for status toggle only
+    // Support partial update for status toggle and field edits
     const fields: string[] = [];
     const values: (string | number)[] = [];
 
@@ -43,6 +43,39 @@ export async function PUT(
     if (body.feerateGroupId !== undefined) {
       fields.push("feerategroup_id = ?");
       values.push(Number(body.feerateGroupId));
+    }
+    if (body.email !== undefined) {
+      fields.push("alarmemail = ?");
+      values.push(String(body.email));
+    }
+
+    // Contact details: build memo JSON merging with existing
+    const hasContact = body.phone !== undefined || body.company !== undefined || body.address !== undefined ||
+        body.bankAccount !== undefined || body.cc !== undefined || body.bcc !== undefined;
+    if (hasContact) {
+      const contactVals = [body.phone, body.company, body.address, body.bankAccount, body.cc, body.bcc]
+        .map(v => v !== undefined ? String(v).trim() : "");
+      const hasNonEmpty = contactVals.some(v => v !== "");
+      
+      if (hasNonEmpty) {
+        const existing = await queryVos<any>("SELECT memo FROM e_customer WHERE id = ?", [parseInt(id)]);
+        const raw = existing[0]?.memo || "";
+        let memo: Record<string, string> = {};
+        let isJson = false;
+        try { if (raw) { memo = JSON.parse(raw); isJson = true; } } catch {}
+        // Preserve plain text memo as remark
+        if (!isJson && raw.trim()) memo = { remark: raw.trim() };
+        if (body.phone !== undefined) memo.phone = String(body.phone);
+        if (body.company !== undefined) memo.company = String(body.company);
+        if (body.address !== undefined) memo.address = String(body.address);
+        if (body.bankAccount !== undefined) memo.bankAccount = String(body.bankAccount);
+        if (body.cc !== undefined) memo.cc = String(body.cc);
+        if (body.bcc !== undefined) memo.bcc = String(body.bcc);
+        // Clean up empty keys
+        Object.keys(memo).forEach(k => { if (!memo[k]) delete memo[k]; });
+        fields.push("memo = ?");
+        values.push(JSON.stringify(memo));
+      }
     }
 
     if (fields.length === 0) {
