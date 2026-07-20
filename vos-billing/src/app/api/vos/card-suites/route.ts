@@ -29,5 +29,19 @@ export async function DELETE(request: NextRequest) {
     if (!id) return NextResponse.json({ error: "ID required" }, { status: 400 });
     await executeVos("DELETE FROM e_card_suite WHERE id = ?", [id]);
     return NextResponse.json({ success: true });
-  } catch { return NextResponse.json({ error: "Failed" }, { status: 500 }); }
+  } catch(e) { return NextResponse.json({ error: e instanceof Error ? e.message : "Failed" }, { status: 500 }); }
+}
+
+export async function PUT(request: NextRequest) {
+  const user = await verifySession();
+  if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  try {
+    const b = await request.json();
+    if (!b.id) return NextResponse.json({ error: "ID required" }, { status: 400 });
+    await executeVos(
+      "UPDATE e_card_suite SET name=?, quantity=?, face_value=?, expire_days=?, prefix=?, pin_length=?, memo=? WHERE id=?",
+      [b.name||"", b.quantity||100, b.faceValue||10, b.expireDays||90, b.prefix||"", b.pinLength||10, b.memo||"", b.id]
+    );
+    return NextResponse.json({ success: true });
+  } catch(e) { return NextResponse.json({ error: e instanceof Error ? e.message : "Failed" }, { status: 500 }); }
 }
