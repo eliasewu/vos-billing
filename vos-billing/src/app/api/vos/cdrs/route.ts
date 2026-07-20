@@ -70,9 +70,9 @@ export async function GET(request: NextRequest) {
     }>(
       `SELECT 
         COUNT(*) as total_calls,
-        COALESCE(SUM(duration), 0) as total_duration,
-        COALESCE(SUM(cost), 0) as total_cost,
-        COALESCE(SUM(sell_cost), 0) as total_sell
+        COALESCE(SUM(feetime), 0) as total_duration,
+        COALESCE(SUM(fee), 0) as total_cost,
+        COALESCE(SUM(fee), 0) as total_sell
        FROM ${table}
        ${conditions.length > 0 ? "WHERE " + conditions.join(" AND ") : ""}`,
       params.slice(0, -1) // Remove limit from params
