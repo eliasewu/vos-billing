@@ -1,0 +1,93 @@
+@import "tailwindcss";
+
+/* ── Light theme (default) ── */
+:root {
+  --app-surface-50: #0f172a;
+  --app-surface-100: #1e293b;
+  --app-surface-200: #334155;
+  --app-surface-300: #475569;
+  --app-surface-400: #64748b;
+  --app-surface-500: #94a3b8;
+  --app-surface-600: #7a8699;
+  --app-surface-700: #cbd5e1;
+  --app-surface-800: #e2e8f0;
+  --app-surface-900: #ffffff;
+  --app-surface-950: #f1f5f9;
+}
+
+/* ── Dark theme ── */
+.dark {
+  --app-surface-50: #f8fafc;
+  --app-surface-100: #f1f5f9;
+  --app-surface-200: #e2e8f0;
+  --app-surface-300: #cbd5e1;
+  --app-surface-400: #94a3b8;
+  --app-surface-500: #64748b;
+  --app-surface-600: #475569;
+  --app-surface-700: #334155;
+  --app-surface-800: #1e293b;
+  --app-surface-900: #0f172a;
+  --app-surface-950: #020617;
+}
+
+@theme {
+  --color-brand-50: #eff6ff;
+  --color-brand-100: #dbeafe;
+  --color-brand-200: #bfdbfe;
+  --color-brand-300: #93c5fd;
+  --color-brand-400: #60a5fa;
+  --color-brand-500: #3b82f6;
+  --color-brand-600: #2563eb;
+  --color-brand-700: #1d4ed8;
+  --color-brand-800: #1e40af;
+  --color-brand-900: #1e3a8a;
+
+  --color-surface-50: var(--app-surface-50);
+  --color-surface-100: var(--app-surface-100);
+  --color-surface-200: var(--app-surface-200);
+  --color-surface-300: var(--app-surface-300);
+  --color-surface-400: var(--app-surface-400);
+  --color-surface-500: var(--app-surface-500);
+  --color-surface-600: var(--app-surface-600);
+  --color-surface-700: var(--app-surface-700);
+  --color-surface-800: var(--app-surface-800);
+  --color-surface-900: var(--app-surface-900);
+  --color-surface-950: var(--app-surface-950);
+}
+
+html {
+  scroll-behavior: smooth;
+}
+
+body {
+  background-color: var(--app-surface-950);
+  color: var(--app-surface-100);
+  font-family: system-ui, -apple-system, sans-serif;
+}
+
+/* Custom scrollbar */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-track {
+  background: var(--app-surface-900);
+}
+::-webkit-scrollbar-thumb {
+  background: var(--app-surface-600);
+  border-radius: 3px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: var(--app-surface-500);
+}
+
+/* Light theme scrollbar tweaks */
+:root::-webkit-scrollbar-track {
+  background: var(--app-surface-800);
+}
+:root::-webkit-scrollbar-thumb {
+  background: var(--app-surface-400);
+}
+:root::-webkit-scrollbar-thumb:hover {
+  background: var(--app-surface-500);
+}

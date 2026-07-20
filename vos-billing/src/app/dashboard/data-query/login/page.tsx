@@ -1,0 +1,83 @@
+"use client";
+
+import { useState, useEffect } from "react";
+import { LogIn, Search, RefreshCw, Clock, Monitor, Download } from "lucide-react";
+
+interface LoginLog { id: number; username: string; loginTime: number; logoutTime: number; ip: string; status: number; memo: string; }
+
+export default function LoginQueryPage() {
+  const [logs, setLogs] = useState<LoginLog[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
+  const [search, setSearch] = useState("");
+
+  const fetchLogs = async () => {
+    setLoading(true); setError("");
+    try {
+      const res = await fetch("/api/vos/login-log");
+      const data = await res.json();
+      if (data.error) setError(data.error); else setLogs(data.logs || []);
+    } catch { setError("Failed to load login logs"); }
+    finally { setLoading(false); }
+  };
+
+  useEffect(() => { fetchLogs(); }, []);
+
+  const formatTime = (ts: number) => ts ? new Date(ts * 1000).toLocaleString("en-US", { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit", second: "2-digit" }) : "—";
+
+  const filtered = logs.filter(l =>
+    l.username.toLowerCase().includes(search.toLowerCase()) ||
+    l.ip.includes(search)
+  );
+
+  const successLogins = logs.filter(l => l.status === 1 || l.status === 0).length;
+
+  const exportCSV = () => {
+    const h = ["ID","Username","Login Time","Logout Time","IP","Status","Memo"];
+    const csv = [h.join(","), ...filtered.map(l => [l.id,l.username,formatTime(l.loginTime),formatTime(l.logoutTime),l.ip,l.status===1?"Success":"Failed",`"${(l.memo||"").replace(/"/g,'""')}"`].join(","))].join("\n");
+    const blob = new Blob([csv],{type:"text/csv"}); const a=document.createElement("a"); a.href=URL.createObjectURL(blob); a.download="login_logs.csv"; a.click();
+  };
+
+  return (
+    <div className="p-6 space-y-6">
+      <div className="flex items-center justify-between">
+        <div><h1 className="text-2xl font-bold text-surface-50">Login Query</h1><p className="text-surface-400 text-sm mt-1">{logs.length} login records</p></div>
+        <div className="flex items-center gap-2">
+          <button onClick={exportCSV} className="p-2 rounded-lg bg-surface-800 border border-surface-700 text-surface-400 hover:text-emerald-400"><Download className="w-4 h-4"/></button>
+          <button onClick={fetchLogs} className="flex items-center gap-2 px-4 py-2 rounded-lg bg-surface-800 text-surface-300 hover:bg-surface-700 text-sm"><RefreshCw className={`w-4 h-4 ${loading?"animate-spin":""}`}/>Refresh</button>
+        </div>
+      </div>
+
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+        <div className="bg-surface-900 border border-surface-700/50 rounded-xl p-5"><div className="flex items-center gap-3"><div className="w-10 h-10 rounded-lg bg-brand-500/10 flex items-center justify-center"><LogIn className="w-5 h-5 text-brand-400"/></div><div><p className="text-2xl font-bold text-surface-50">{logs.length}</p><p className="text-xs text-surface-400">Total Logins</p></div></div></div>
+        <div className="bg-surface-900 border border-surface-700/50 rounded-xl p-5"><div className="flex items-center gap-3"><div className="w-10 h-10 rounded-lg bg-emerald-500/10 flex items-center justify-center"><Monitor className="w-5 h-5 text-emerald-400"/></div><div><p className="text-2xl font-bold text-surface-50">{successLogins}</p><p className="text-xs text-surface-400">Successful</p></div></div></div>
+        <div className="bg-surface-900 border border-surface-700/50 rounded-xl p-5"><div className="flex items-center gap-3"><div className="w-10 h-10 rounded-lg bg-violet-500/10 flex items-center justify-center"><Clock className="w-5 h-5 text-violet-400"/></div><div><p className="text-2xl font-bold text-surface-50">{new Set(logs.map(l=>l.ip)).size}</p><p className="text-xs text-surface-400">Unique IPs</p></div></div></div>
+      </div>
+
+      <div className="relative max-w-md"><Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-surface-500"/><input type="text" placeholder="Search by username or IP..." value={search} onChange={e=>setSearch(e.target.value)} className="w-full pl-10 pr-4 py-2.5 bg-surface-900 border border-surface-700/50 rounded-lg text-surface-50 text-sm placeholder:text-surface-600 focus:outline-none focus:border-brand-500/50"/></div>
+
+      {error&&<div className="p-4 rounded-xl bg-red-500/10 border border-red-500/20 text-red-400 text-sm">{error}</div>}
+
+      <div className="bg-surface-900 border border-surface-700/50 rounded-xl overflow-hidden">
+        <div className="overflow-x-auto"><table className="w-full text-sm">
+          <thead><tr className="border-b border-surface-800">
+            <th className="text-left px-4 py-3 text-surface-400 font-medium text-xs uppercase">Username</th>
+            <th className="text-left px-4 py-3 text-surface-400 font-medium text-xs uppercase">Login Time</th>
+            <th className="text-left px-4 py-3 text-surface-400 font-medium text-xs uppercase">Logout Time</th>
+            <th className="text-left px-4 py-3 text-surface-400 font-medium text-xs uppercase">IP Address</th>
+            <th className="text-center px-4 py-3 text-surface-400 font-medium text-xs uppercase">Status</th>
+            <th className="text-left px-4 py-3 text-surface-400 font-medium text-xs uppercase">Memo</th>
+          </tr></thead>
+          <tbody>{loading?Array.from({length:5}).map((_,i)=><tr key={i} className="border-b border-surface-800/50">{Array.from({length:6}).map((_,j)=><td key={j} className="px-4 py-3"><div className="h-4 bg-surface-800 rounded animate-pulse"/></td>)}</tr>):filtered.length===0?<tr><td colSpan={6} className="px-4 py-12 text-center text-surface-500"><LogIn className="w-10 h-10 mx-auto mb-2 text-surface-600"/><p>No login records</p></td></tr>:filtered.map(l=><tr key={l.id} className="border-b border-surface-800/50 hover:bg-surface-800/30">
+            <td className="px-4 py-3 text-surface-50 font-medium">{l.username}</td>
+            <td className="px-4 py-3 text-surface-300 text-xs whitespace-nowrap">{formatTime(l.loginTime)}</td>
+            <td className="px-4 py-3 text-surface-400 text-xs whitespace-nowrap">{l.logoutTime ? formatTime(l.logoutTime) : "Active"}</td>
+            <td className="px-4 py-3 text-surface-300 font-mono text-xs">{l.ip}</td>
+            <td className="px-4 py-3 text-center"><span className={`inline-flex px-2 py-0.5 rounded-full text-xs font-medium ${l.status===1||l.status===0?"bg-emerald-500/10 text-emerald-400":"bg-red-500/10 text-red-400"}`}>{l.status===1||l.status===0?"Success":"Failed"}</span></td>
+            <td className="px-4 py-3 text-surface-400 text-xs max-w-[200px] truncate">{l.memo||"—"}</td>
+          </tr>)}</tbody>
+        </table></div>
+      </div>
+    </div>
+  );
+}
