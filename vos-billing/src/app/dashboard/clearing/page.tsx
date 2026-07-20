@@ -53,14 +53,14 @@ export default function ClearingPage() {
   const fetchData = async () => {
     setLoading(true); setError("");
     try {
-      const [custRes, gwRes] = await Promise.all([
-        fetch("/api/vos/customers?type=1"),
+      const [accRes, gwRes] = await Promise.all([
+        fetch("/api/vos/clearing/accounts"),
         fetch("/api/vos/gateways?type=routing"),
       ]);
-      const custData = await custRes.json();
+      const accData = await accRes.json();
       const gwData = await gwRes.json();
 
-      const customers: Record<string, any>[] = custData.customers || [];
+      const clearingAccRows: Record<string, any>[] = accData.accounts || [];
       const routingGateways: Record<string, any>[] = gwData.gateways || [];
 
       // Group gateways by customer_id
@@ -82,19 +82,18 @@ export default function ClearingPage() {
         }
       }
 
-      // Build account list
-      const clearingAccounts: ClearingAccount[] = customers
-        .filter((c: any) => (c.customer_type === 1 || c.customer_type === "1" || gwMap.has(Number(c.id))))
-        .map((c: any) => {
-          const id = Number(c.id);
-          const gws = gwMap.get(id) || [];
+      // Build account list from clearing accounts API
+      const clearingAccounts: ClearingAccount[] = clearingAccRows
+        .map((r: any) => {
+          const cid = Number(r.customerId);
+          const gws = gwMap.get(cid) || [];
           return {
-            id,
-            account: String(c.account || c.customer_name || `#${id}`),
-            name: String(c.customer_name || c.name || `Customer ${id}`),
-            balance: Number(c.balance || 0),
-            creditLimit: Number(c.creditLimit || c.credit || 0),
-            status: Number(c.status) || 0,
+            id: cid,
+            account: String(r.account || r.customerName || `#${cid}`),
+            name: String(r.customerName || `Customer ${cid}`),
+            balance: Number(r.balance || 0),
+            creditLimit: Number(r.limitMoney || r.creditLimit || 0),
+            status: Number(r.status),
             gatewayCount: gws.length,
             gateways: gws,
           };

@@ -6,8 +6,8 @@ export async function GET() {
   const user = await verifySession();
   if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   try {
-    const rows = await queryVos<any>("SELECT ca.*, c.name AS customer_name FROM e_clearing_account ca LEFT JOIN e_customer c ON ca.customer_id=c.id ORDER BY ca.id");
-    return NextResponse.json({ accounts: (rows as any[]).map(r => ({ id: r.id, customerId: r.customer_id, customerName: r.customer_name, balance: Number(r.balance||0), limitMoney: Number(r.limit_money||0), status: Number(r.status||0), memo: r.memo||"" })) });
+    const rows = await queryVos<any>("SELECT ca.*, c.name AS customer_name, c.account AS customer_account FROM e_clearing_account ca LEFT JOIN e_customer c ON ca.customer_id=c.id ORDER BY ca.id");
+    return NextResponse.json({ accounts: (rows as any[]).map(r => ({ id: r.id, customerId: r.customer_id, customerName: r.customer_name, account: r.customer_account || "", balance: Number(r.balance||0), limitMoney: Number(r.limit_money||0), status: Number(r.status||0), memo: r.memo||"" })) });
   } catch { return NextResponse.json({ error: "Failed" }, { status: 500 }); }
 }
 

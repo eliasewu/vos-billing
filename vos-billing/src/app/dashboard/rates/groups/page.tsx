@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect, useRef } from "react";
-import { Layers, RefreshCw, Shield, Plus, X, Send, Upload, FileUp, Search, Edit2, Trash2, Loader2, Edit3, ArrowRightLeft } from "lucide-react";
+import { Layers, RefreshCw, Shield, Plus, X, Send, Upload, FileUp, Search, Edit2, Trash2, Loader2, Edit3, ArrowRightLeft, Square, CheckSquare } from "lucide-react";
 
 interface RateGroup { id: number; name: string; fakeMinute: number; isPrivate: number; memo: string; rateCount: number; }
 interface CsvRow { prefix: string; areacode: string; fee: string; tax: string; period: string; type: string; }
@@ -51,6 +51,12 @@ export default function RateGroupPage() {
   const [moveTargetGroupId, setMoveTargetGroupId] = useState<number>(0);
   const [moving, setMoving] = useState(false);
 
+  // ─── Bulk Move ───
+  const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
+  const [bulkMoving, setBulkMoving] = useState(false);
+  const [bulkMoveTargetGroupId, setBulkMoveTargetGroupId] = useState<number>(0);
+  const [showBulkMoveModal, setShowBulkMoveModal] = useState(false);
+
   const fetchGroups = async () => {
     setLoading(true);
     try { const r = await window.fetch("/api/vos/rate-groups"); const d = await r.json(); if (d.error) setError(d.error); else setGroups(d.groups||[]); }
@@ -67,6 +73,7 @@ export default function RateGroupPage() {
         const r = await window.fetch(`/api/vos/rates?search=${encodeURIComponent(searchQuery)}`);
         const d = await r.json();
         setSearchResults(d.results || []);
+        setSelectedIds(new Set());
       } catch { setSearchResults([]); }
       finally { setSearching(false); }
     }, 300);
@@ -238,6 +245,54 @@ export default function RateGroupPage() {
     finally { setMoving(false); }
   };
 
+  // ─── Bulk Move handlers ───
+  const toggleSelect = (id: number) => {
+    setSelectedIds(prev => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id); else next.add(id);
+      return next;
+    });
+  };
+
+  const toggleSelectAll = () => {
+    if (selectedIds.size === searchResults.length) {
+      setSelectedIds(new Set());
+    } else {
+      setSelectedIds(new Set(searchResults.map(r => r.id)));
+    }
+  };
+
+  const handleBulkMove = async () => {
+    if (selectedIds.size === 0 || !bulkMoveTargetGroupId) return;
+    if (bulkMoving) return;
+    setBulkMoving(true); setError(""); setSuccess("");
+    let ok = 0; let fail = 0;
+    for (const id of selectedIds) {
+      try {
+        const r = await window.fetch("/api/vos/rates", {
+          method: "PUT", headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ id, feerategroup_id: bulkMoveTargetGroupId }),
+        });
+        const d = await r.json();
+        if (d.error) fail++; else ok++;
+      } catch { fail++; }
+    }
+    const targetName = groups.find(g => g.id === bulkMoveTargetGroupId)?.name || "group";
+    if (ok > 0) {
+      setSuccess(fail > 0
+        ? `Moved ${ok} of ${ok + fail} rates to ${targetName} (${fail} failed)`
+        : `Moved ${ok} rates to ${targetName}`
+      );
+      setSearchResults(prev => prev.filter(s => !selectedIds.has(s.id)));
+      setSelectedIds(new Set());
+      fetchGroups();
+    } else {
+      setError(`Failed to move ${fail} rates`);
+    }
+    setShowBulkMoveModal(false);
+    setBulkMoving(false);
+  };
+
   const parseCSV = (text: string) => {
     const lines = text.trim().split(/\r?\n/);
     if (lines.length < 2) { setError("CSV must have a header row and at least one data row"); return; }
@@ -317,7 +372,7 @@ export default function RateGroupPage() {
         <input type="text" placeholder="Search rates by prefix across all groups..." value={searchQuery} onChange={e => setSearchQuery(e.target.value)}
           className="w-full pl-10 pr-10 py-2.5 bg-surface-900 border border-surface-700/50 rounded-lg text-surface-50 text-sm placeholder:text-surface-600 focus:outline-none focus:border-brand-500/50" />
         {searchQuery && (
-          <button onClick={() => { setSearchQuery(""); setSearchResults([]); }} className="absolute right-3 top-1/2 -translate-y-1/2 p-1 rounded text-surface-500 hover:text-surface-300 transition-colors" title="Clear search"><X className="w-3.5 h-3.5" /></button>
+          <button onClick={() => { setSearchQuery(""); setSearchResults([]); setSelectedIds(new Set()); }} className="absolute right-3 top-1/2 -translate-y-1/2 p-1 rounded text-surface-500 hover:text-surface-300 transition-colors" title="Clear search"><X className="w-3.5 h-3.5" /></button>
         )}
       </div>
 
@@ -328,12 +383,39 @@ export default function RateGroupPage() {
             <p className="text-sm text-surface-400">{searching ? "Searching..." : `${searchResults.length} results for "${searchQuery}"`}</p>
           </div>
           {searchResults.length > 0 && (
+            <>
+              {/* Bulk move action bar */}
+              {selectedIds.size > 0 && (
+                <div className="px-5 py-3 bg-cyan-500/10 border-b border-cyan-500/20 flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <CheckSquare className="w-4 h-4 text-cyan-400" />
+                    <span className="text-sm font-medium text-cyan-400">{selectedIds.size} rate{selectedIds.size !== 1 ? "s" : ""} selected</span>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <button onClick={() => setSelectedIds(new Set())} className="px-3 py-1.5 rounded-lg text-xs font-medium bg-surface-800 text-surface-300 hover:text-surface-50 transition-colors">
+                      Deselect
+                    </button>
+                    <button
+                      onClick={() => { setBulkMoveTargetGroupId(0); setError(""); setSuccess(""); setShowBulkMoveModal(true); }}
+                      className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium bg-cyan-600 hover:bg-cyan-500 text-white transition-colors"
+                    >
+                      <ArrowRightLeft className="w-3.5 h-3.5" />
+                      Move Selected
+                    </button>
+                  </div>
+                </div>
+              )}
             <div className="overflow-x-auto max-h-80 overflow-y-auto">
               <table className="w-full text-sm">
-                <thead><tr className="border-b border-surface-800"><th className="text-left px-4 py-2 text-surface-400 text-xs uppercase">Prefix</th><th className="text-left px-4 py-2 text-surface-400 text-xs uppercase">Area</th><th className="text-right px-4 py-2 text-surface-400 text-xs uppercase">Fee</th><th className="text-right px-4 py-2 text-surface-400 text-xs uppercase">Period</th><th className="text-left px-4 py-2 text-surface-400 text-xs uppercase">Type</th><th className="text-left px-4 py-2 text-surface-400 text-xs uppercase">Group</th><th className="text-center px-4 py-2 text-surface-400 text-xs uppercase w-20">Actions</th></tr></thead>
+                <thead><tr className="border-b border-surface-800"><th className="text-center px-3 py-2 text-surface-400 text-xs uppercase w-10"><button onClick={toggleSelectAll} className="p-0.5 rounded hover:text-surface-200 transition-colors" title={selectedIds.size === searchResults.length ? "Deselect all" : "Select all"}>{selectedIds.size === searchResults.length && searchResults.length > 0 ? <CheckSquare className="w-3.5 h-3.5 text-brand-400" /> : <Square className="w-3.5 h-3.5" />}</button></th><th className="text-left px-4 py-2 text-surface-400 text-xs uppercase">Prefix</th><th className="text-left px-4 py-2 text-surface-400 text-xs uppercase">Area</th><th className="text-right px-4 py-2 text-surface-400 text-xs uppercase">Fee</th><th className="text-right px-4 py-2 text-surface-400 text-xs uppercase">Period</th><th className="text-left px-4 py-2 text-surface-400 text-xs uppercase">Type</th><th className="text-left px-4 py-2 text-surface-400 text-xs uppercase">Group</th><th className="text-center px-4 py-2 text-surface-400 text-xs uppercase w-20">Actions</th></tr></thead>
                 <tbody className="divide-y divide-surface-800/50">
                   {searchResults.map(r => (
                     <tr key={r.id} className="hover:bg-surface-800/30">
+                      <td className="px-3 py-2 text-center">
+                        <button onClick={() => toggleSelect(r.id)} className="p-0.5 rounded hover:text-brand-400 transition-colors">
+                          {selectedIds.has(r.id) ? <CheckSquare className="w-3.5 h-3.5 text-brand-400" /> : <Square className="w-3.5 h-3.5 text-surface-500" />}
+                        </button>
+                      </td>
                       <td className="px-4 py-2 text-surface-50 font-mono text-xs">{r.prefix}</td>
                       <td className="px-4 py-2 text-surface-300 text-xs">{r.areacode || "—"}</td>
                       <td className="px-4 py-2 text-right text-emerald-400 font-mono text-xs">${r.fee.toFixed(6)}</td>
@@ -352,6 +434,7 @@ export default function RateGroupPage() {
                 </tbody>
               </table>
             </div>
+            </>
           )}
         </div>
       )}
@@ -480,6 +563,35 @@ export default function RateGroupPage() {
                 <div><label className="block text-xs font-medium text-surface-400 mb-1">Type</label><select value={editRateForm.type} onChange={e=>setEditRateForm({...editRateForm,type:e.target.value})} className="w-full px-3 py-2 bg-surface-800 border border-surface-700/50 rounded-lg text-surface-50 text-sm focus:outline-none focus:border-amber-500/50"><option value="0">Standard</option><option value="1">Flat Rate</option><option value="2">Tiered</option><option value="3">Premium</option></select></div>
               </div>
               <button onClick={handleSaveEditRate} disabled={!editRateForm.prefix||submitting} className="w-full flex items-center justify-center gap-2 px-4 py-3 rounded-xl bg-amber-600 hover:bg-amber-500 text-white text-sm font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed">{submitting?<Loader2 className="w-4 h-4 animate-spin"/>:<Send className="w-4 h-4"/>}{submitting?"Saving...":"Save Changes"}</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ─── Bulk Move Modal ─── */}
+      {showBulkMoveModal && selectedIds.size > 0 && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm">
+          <div className="bg-surface-900 border border-surface-700/50 rounded-2xl w-full max-w-sm mx-4 shadow-2xl">
+            <div className="flex items-center justify-between px-6 py-4 border-b border-surface-800">
+              <div className="flex items-center gap-3"><div className="w-10 h-10 rounded-lg bg-cyan-500/10 flex items-center justify-center"><ArrowRightLeft className="w-5 h-5 text-cyan-400"/></div><div><h2 className="text-lg font-semibold text-surface-50">Bulk Move Rates</h2><p className="text-xs text-surface-500">{selectedIds.size} rate{selectedIds.size !== 1 ? "s" : ""} selected</p></div></div>
+              <button onClick={()=>setShowBulkMoveModal(false)} className="p-1.5 rounded-lg hover:bg-surface-800 text-surface-500 hover:text-surface-50"><X className="w-5 h-5"/></button>
+            </div>
+            <div className="px-6 py-4 space-y-4">
+              <div>
+                <label className="block text-xs font-medium text-surface-400 mb-1">Target Rate Group</label>
+                <select value={bulkMoveTargetGroupId} onChange={e=>setBulkMoveTargetGroupId(parseInt(e.target.value))}
+                  className="w-full px-3 py-2 bg-surface-800 border border-surface-700/50 rounded-lg text-surface-50 text-sm focus:outline-none focus:border-cyan-500/50">
+                  <option value={0}>— Select group —</option>
+                  {groups.map(g => (
+                    <option key={g.id} value={g.id}>{g.name} ({g.rateCount} rates)</option>
+                  ))}
+                </select>
+              </div>
+              <button onClick={handleBulkMove} disabled={!bulkMoveTargetGroupId || bulkMoving}
+                className="w-full flex items-center justify-center gap-2 px-4 py-3 rounded-xl bg-cyan-600 hover:bg-cyan-500 text-white text-sm font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed">
+                {bulkMoving ? <Loader2 className="w-4 h-4 animate-spin" /> : <ArrowRightLeft className="w-4 h-4" />}
+                {bulkMoving ? `Moving ${selectedIds.size} rates...` : bulkMoveTargetGroupId ? `Move ${selectedIds.size} rates to ${groups.find(g=>g.id===bulkMoveTargetGroupId)?.name}` : "Move"}
+              </button>
             </div>
           </div>
         </div>
