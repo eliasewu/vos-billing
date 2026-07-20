@@ -64,15 +64,26 @@ export async function GET(request: NextRequest) {
 
     const groups = await queryVos<Record<string, unknown>>(
       `SELECT g.id, g.name, g.privilege, g.fakeminute, g.isprivate, g.memo, g.user_id,
-        COUNT(r.id) AS rate_count, MIN(r.fee) AS min_rate, MAX(r.fee) AS max_rate
-      FROM e_feerategroup g LEFT JOIN e_feerate r ON r.feerategroup_id = g.id
-      GROUP BY g.id, g.name, g.privilege, g.fakeminute, g.isprivate, g.memo, g.user_id
+        u.username AS creator_name,
+        COUNT(r.id) AS rate_count, MIN(r.fee) AS min_rate, MAX(r.fee) AS max_rate,
+        COALESCE(acct.cnt, 0) AS using_accounts
+      FROM e_feerategroup g
+      LEFT JOIN e_feerate r ON r.feerategroup_id = g.id
+      LEFT JOIN e_user u ON g.user_id = u.id
+      LEFT JOIN (
+        SELECT feerategroup_id, COUNT(*) AS cnt
+        FROM e_customer WHERE feerategroup_id > 0
+        GROUP BY feerategroup_id
+      ) acct ON g.id = acct.feerategroup_id
+      GROUP BY g.id, g.name, g.privilege, g.fakeminute, g.isprivate, g.memo, g.user_id, u.username, acct.cnt
       ORDER BY g.name ASC`
     );
     const rateGroups = groups.map((g) => ({
       id: Number(g.id), name: String(g.name||""), privilege: Number(g.privilege)||0,
       fakeminute: Number(g.fakeminute)||60, isprivate: Number(g.isprivate)||0,
       memo: String(g.memo||""), user_id: Number(g.user_id)||0,
+      creator_name: String(g.creator_name||""),
+      using_accounts: Number(g.using_accounts)||0,
       rate_count: Number(g.rate_count)||0, min_rate: Number(g.min_rate)||0, max_rate: Number(g.max_rate)||0,
     }));
     return NextResponse.json({ rateGroups });

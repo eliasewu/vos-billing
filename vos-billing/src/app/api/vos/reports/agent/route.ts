@@ -9,15 +9,17 @@ export async function GET() {
     // Aggregate CDRs by agent (customer) with date grouping
     const rows = await queryVos<any>(
       `SELECT 
-        DATE(FROM_UNIXTIME(starttime)) AS report_date,
-        customer_id,
+        DATE(FROM_UNIXTIME(c.starttime)) AS report_date,
+        c.customer_id,
+        cu.name AS customer_name,
         COUNT(*) AS total_calls,
-        SUM(duration) AS total_duration,
-        SUM(total_fee) AS total_fee
-       FROM e_cdr
-       WHERE starttime > 0
-       GROUP BY report_date, customer_id
-       ORDER BY report_date DESC, customer_id
+        SUM(c.duration) AS total_duration,
+        SUM(c.total_fee) AS total_fee
+       FROM e_cdr c
+       LEFT JOIN e_customer cu ON c.customer_id = cu.id
+       WHERE c.starttime > 0
+       GROUP BY report_date, c.customer_id, cu.name
+       ORDER BY report_date DESC, c.customer_id
        LIMIT 300`
     );
 
@@ -25,7 +27,7 @@ export async function GET() {
       id: i + 1,
       date: r.report_date || "",
       agentId: r.customer_id,
-      agentName: `Agent #${r.customer_id}`,
+      agentName: r.customer_name || `Agent #${r.customer_id}`,
       calls: Number(r.total_calls) || 0,
       duration: Number(r.total_duration) || 0,
       fee: Number(r.total_fee) || 0,

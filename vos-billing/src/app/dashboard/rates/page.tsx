@@ -13,6 +13,8 @@ interface RateGroup {
   rate_count: number;
   min_rate: number;
   max_rate: number;
+  creator_name: string;
+  using_accounts: number;
 }
 
 interface Rate {
@@ -318,6 +320,18 @@ export default function RatesPage() {
                       )}
                       <span>·</span>
                       <span>Fake min: {group.fakeminute}s</span>
+                      {group.using_accounts > 0 && (
+                        <>
+                          <span>·</span>
+                          <span className="text-cyan-400">{group.using_accounts} account{group.using_accounts !== 1 ? "s" : ""}</span>
+                        </>
+                      )}
+                      {group.creator_name && (
+                        <>
+                          <span>·</span>
+                          <span className="text-surface-500">by {group.creator_name}</span>
+                        </>
+                      )}
                       {group.memo && (
                         <>
                           <span>·</span>

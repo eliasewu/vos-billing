@@ -43,6 +43,7 @@ import {
   ChevronDown,
   Zap,
   Shield,
+  X,
 } from "lucide-react";
 import { useState } from "react";
 
@@ -126,6 +127,38 @@ const menuSections: MenuItem[] = [
     ],
   },
 
+  // CDR Analysis (expandable)
+  {
+    label: "CDR Analysis",
+    icon: BarChart3,
+    children: [
+      {
+        label: "Mapping Gateway",
+        icon: GitBranch,
+        children: [
+          { href: "/dashboard/cdr-analysis/mapping-performance", label: "Performance", icon: TrendingUp },
+          { href: "/dashboard/cdr-analysis/mapping-call-analysis", label: "Call Analysis", icon: Phone },
+          { href: "/dashboard/cdr-analysis/mapping-fail-analysis", label: "Fail Analysis", icon: X },
+          { href: "/dashboard/cdr-analysis/mapping-call-daily", label: "Call Daily", icon: Calendar },
+          { href: "/dashboard/cdr-analysis/mapping-area-analysis", label: "Area Analysis", icon: Network },
+          { href: "/dashboard/cdr-analysis/mapping-cross-analysis", label: "Cross Analysis", icon: GitBranch },
+        ],
+      },
+      {
+        label: "Routing Gateway",
+        icon: ArrowLeftRight,
+        children: [
+          { href: "/dashboard/cdr-analysis/routing-performance", label: "Performance", icon: TrendingUp },
+          { href: "/dashboard/cdr-analysis/routing-call-analysis", label: "Call Analysis", icon: Phone },
+          { href: "/dashboard/cdr-analysis/routing-fail-analysis", label: "Fail Analysis", icon: X },
+          { href: "/dashboard/cdr-analysis/routing-call-daily", label: "Call Daily", icon: Calendar },
+          { href: "/dashboard/cdr-analysis/routing-area-analysis", label: "Area Analysis", icon: Network },
+          { href: "/dashboard/cdr-analysis/routing-cross-analysis", label: "Cross Analysis", icon: GitBranch },
+        ],
+      },
+    ],
+  },
+
   // Data Query (expandable)
   {
     label: "Data Query",
@@ -189,7 +222,7 @@ export default function Sidebar() {
   const searchParams = useSearchParams();
   const [collapsed, setCollapsed] = useState(false);
   const [expandedSections, setExpandedSections] = useState<Set<string>>(
-    new Set(["Rate Management", "Package Management", "Account Management", "Operation Management", "Gateway Operation", "Data Query", "Data Reporting", "Cards Management", "Alarm Management", "System Management"])
+    new Set(["Rate Management", "Package Management", "Account Management", "Operation Management", "Gateway Operation", "Data Query", "Data Reporting", "Cards Management", "Alarm Management", "System Management", "CDR Analysis", "Mapping Gateway", "Routing Gateway"])
   );
 
   const toggleSection = (label: string) => {

@@ -22,7 +22,7 @@ export default function RateGroupPage() {
   // ─── Add Rate modal ───
   const [showAddModal, setShowAddModal] = useState(false);
   const [selectedGroupId, setSelectedGroupId] = useState<number>(0);
-  const [addForm, setAddForm] = useState({ prefix: "", areacode: "", fee: "0.001", tax: "0", period: "60", type: "0", locktype: "0" });
+  const [addForm, setAddForm] = useState({ prefix: "", areacode: "", fee: "0.001", tax: "0", period: "60", fakeminute: "60", type: "0", locktype: "0" });
   const [submitting, setSubmitting] = useState(false);
 
   // ─── Bulk import modal ───
@@ -42,7 +42,7 @@ export default function RateGroupPage() {
   // ─── Edit/Delete rate from search results ───
   const [showEditRateModal, setShowEditRateModal] = useState(false);
   const [editingRate, setEditingRate] = useState<RateResult | null>(null);
-  const [editRateForm, setEditRateForm] = useState({ prefix: "", areacode: "", fee: "0.001", tax: "0", period: "60", type: "0", locktype: "0" });
+  const [editRateForm, setEditRateForm] = useState({ prefix: "", areacode: "", fee: "0.001", tax: "0", period: "60", fakeminute: "60", type: "0", locktype: "0" });
   const [deletingId, setDeletingId] = useState<number | null>(null);
 
   // ─── Move to Group ───
@@ -134,7 +134,7 @@ export default function RateGroupPage() {
   // ─── Rate CRUD handlers ───
   const openAddModal = (groupId: number) => {
     setSelectedGroupId(groupId);
-    setAddForm({ prefix: "", areacode: "", fee: "0.001", tax: "0", period: "60", type: "0", locktype: "0" });
+    setAddForm({ prefix: "", areacode: "", fee: "0.001", tax: "0", period: "60", fakeminute: "60", type: "0", locktype: "0" });
     setError(""); setSuccess("");
     setShowAddModal(true);
   };
@@ -187,6 +187,7 @@ export default function RateGroupPage() {
       fee: String(rate.fee),
       tax: String(rate.tax || 0),
       period: String(rate.period || 60),
+      fakeminute: "60",
       type: String(rate.type || 0),
       locktype: String(rate.locktype || 0),
     });
@@ -536,8 +537,36 @@ export default function RateGroupPage() {
                 <div><label className="block text-xs font-medium text-surface-400 mb-1">Area Code</label><input type="text" placeholder="e.g. 91" value={addForm.areacode} onChange={e=>setAddForm({...addForm,areacode:e.target.value})} className="w-full px-3 py-2 bg-surface-800 border border-surface-700/50 rounded-lg text-surface-50 text-sm focus:outline-none focus:border-emerald-500/50"/></div>
                 <div><label className="block text-xs font-medium text-surface-400 mb-1">Rate ($/min)</label><input type="number" step="0.000001" value={addForm.fee} onChange={e=>setAddForm({...addForm,fee:e.target.value})} className="w-full px-3 py-2 bg-surface-800 border border-surface-700/50 rounded-lg text-surface-50 text-sm focus:outline-none focus:border-emerald-500/50"/></div>
                 <div><label className="block text-xs font-medium text-surface-400 mb-1">Tax</label><input type="number" step="0.01" min="0" max="1" value={addForm.tax} onChange={e=>setAddForm({...addForm,tax:e.target.value})} className="w-full px-3 py-2 bg-surface-800 border border-surface-700/50 rounded-lg text-surface-50 text-sm focus:outline-none focus:border-emerald-500/50"/></div>
-                <div><label className="block text-xs font-medium text-surface-400 mb-1">Billing Cycle (s)</label><input type="number" value={addForm.period} onChange={e=>setAddForm({...addForm,period:e.target.value})} className="w-full px-3 py-2 bg-surface-800 border border-surface-700/50 rounded-lg text-surface-50 text-sm focus:outline-none focus:border-emerald-500/50"/></div>
                 <div><label className="block text-xs font-medium text-surface-400 mb-1">Type</label><select value={addForm.type} onChange={e=>setAddForm({...addForm,type:e.target.value})} className="w-full px-3 py-2 bg-surface-800 border border-surface-700/50 rounded-lg text-surface-50 text-sm focus:outline-none focus:border-emerald-500/50"><option value="0">Standard</option><option value="1">Flat Rate</option><option value="2">Tiered</option><option value="3">Premium</option></select></div>
+              </div>
+              {/* Billing Cycle & Increment */}
+              <div>
+                <label className="block text-xs text-surface-400 mb-1.5">Billing Cycle & Increment</label>
+                <div className="flex gap-1.5 mb-2 flex-wrap">
+                  {[[1,1,"1/1"],[6,6,"6/6"],[30,1,"30/1"],[60,1,"60/1"],[60,60,"60/60"]].map(([p,i,label]) => (
+                    <button key={label} type="button"
+                      onClick={() => setAddForm({...addForm, period: String(p), fakeminute: String(i)})}
+                      className={`px-2 py-1 rounded text-[11px] font-medium transition-colors ${
+                        addForm.period === String(p) && addForm.fakeminute === String(i)
+                          ? "bg-emerald-500/20 text-emerald-400 border border-emerald-500/40"
+                          : "bg-surface-800 text-surface-500 border border-surface-700 hover:border-surface-600"
+                      }`}>
+                      {label}
+                    </button>
+                  ))}
+                </div>
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-[10px] text-surface-500 mb-0.5">Cycle (s)</label>
+                    <input type="number" value={addForm.period} onChange={e=>setAddForm({...addForm,period:e.target.value})}
+                      className="w-full px-3 py-2 bg-surface-800 border border-surface-700/50 rounded-lg text-sm text-surface-50 focus:outline-none focus:border-emerald-500/50" />
+                  </div>
+                  <div>
+                    <label className="block text-[10px] text-surface-500 mb-0.5">Increment (s)</label>
+                    <input type="number" value={addForm.fakeminute} onChange={e=>setAddForm({...addForm,fakeminute:e.target.value})}
+                      className="w-full px-3 py-2 bg-surface-800 border border-surface-700/50 rounded-lg text-sm text-surface-50 focus:outline-none focus:border-emerald-500/50" />
+                  </div>
+                </div>
               </div>
               <button onClick={handleAddRate} disabled={!addForm.prefix||submitting} className="w-full flex items-center justify-center gap-2 px-4 py-3 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-sm font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed">{submitting?<RefreshCw className="w-4 h-4 animate-spin"/>:<Send className="w-4 h-4"/>}{submitting?"Adding...":"Add Rate"}</button>
             </div>
@@ -559,8 +588,36 @@ export default function RateGroupPage() {
                 <div><label className="block text-xs font-medium text-surface-400 mb-1">Area Code</label><input type="text" value={editRateForm.areacode} onChange={e=>setEditRateForm({...editRateForm,areacode:e.target.value})} className="w-full px-3 py-2 bg-surface-800 border border-surface-700/50 rounded-lg text-surface-50 text-sm focus:outline-none focus:border-amber-500/50"/></div>
                 <div><label className="block text-xs font-medium text-surface-400 mb-1">Rate ($/min)</label><input type="number" step="0.000001" value={editRateForm.fee} onChange={e=>setEditRateForm({...editRateForm,fee:e.target.value})} className="w-full px-3 py-2 bg-surface-800 border border-surface-700/50 rounded-lg text-surface-50 text-sm focus:outline-none focus:border-amber-500/50"/></div>
                 <div><label className="block text-xs font-medium text-surface-400 mb-1">Tax</label><input type="number" step="0.01" min="0" max="1" value={editRateForm.tax} onChange={e=>setEditRateForm({...editRateForm,tax:e.target.value})} className="w-full px-3 py-2 bg-surface-800 border border-surface-700/50 rounded-lg text-surface-50 text-sm focus:outline-none focus:border-amber-500/50"/></div>
-                <div><label className="block text-xs font-medium text-surface-400 mb-1">Billing Cycle (s)</label><input type="number" value={editRateForm.period} onChange={e=>setEditRateForm({...editRateForm,period:e.target.value})} className="w-full px-3 py-2 bg-surface-800 border border-surface-700/50 rounded-lg text-surface-50 text-sm focus:outline-none focus:border-amber-500/50"/></div>
                 <div><label className="block text-xs font-medium text-surface-400 mb-1">Type</label><select value={editRateForm.type} onChange={e=>setEditRateForm({...editRateForm,type:e.target.value})} className="w-full px-3 py-2 bg-surface-800 border border-surface-700/50 rounded-lg text-surface-50 text-sm focus:outline-none focus:border-amber-500/50"><option value="0">Standard</option><option value="1">Flat Rate</option><option value="2">Tiered</option><option value="3">Premium</option></select></div>
+              </div>
+              {/* Billing Cycle & Increment */}
+              <div>
+                <label className="block text-xs text-surface-400 mb-1.5">Billing Cycle & Increment</label>
+                <div className="flex gap-1.5 mb-2 flex-wrap">
+                  {[[1,1,"1/1"],[6,6,"6/6"],[30,1,"30/1"],[60,1,"60/1"],[60,60,"60/60"]].map(([p,i,label]) => (
+                    <button key={label} type="button"
+                      onClick={() => setEditRateForm({...editRateForm, period: String(p), fakeminute: String(i)})}
+                      className={`px-2 py-1 rounded text-[11px] font-medium transition-colors ${
+                        editRateForm.period === String(p) && editRateForm.fakeminute === String(i)
+                          ? "bg-amber-500/20 text-amber-400 border border-amber-500/40"
+                          : "bg-surface-800 text-surface-500 border border-surface-700 hover:border-surface-600"
+                      }`}>
+                      {label}
+                    </button>
+                  ))}
+                </div>
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-[10px] text-surface-500 mb-0.5">Cycle (s)</label>
+                    <input type="number" value={editRateForm.period} onChange={e=>setEditRateForm({...editRateForm,period:e.target.value})}
+                      className="w-full px-3 py-2 bg-surface-800 border border-surface-700/50 rounded-lg text-sm text-surface-50 focus:outline-none focus:border-amber-500/50" />
+                  </div>
+                  <div>
+                    <label className="block text-[10px] text-surface-500 mb-0.5">Increment (s)</label>
+                    <input type="number" value={editRateForm.fakeminute} onChange={e=>setEditRateForm({...editRateForm,fakeminute:e.target.value})}
+                      className="w-full px-3 py-2 bg-surface-800 border border-surface-700/50 rounded-lg text-sm text-surface-50 focus:outline-none focus:border-amber-500/50" />
+                  </div>
+                </div>
               </div>
               <button onClick={handleSaveEditRate} disabled={!editRateForm.prefix||submitting} className="w-full flex items-center justify-center gap-2 px-4 py-3 rounded-xl bg-amber-600 hover:bg-amber-500 text-white text-sm font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed">{submitting?<Loader2 className="w-4 h-4 animate-spin"/>:<Send className="w-4 h-4"/>}{submitting?"Saving...":"Save Changes"}</button>
             </div>
