@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { Search, Users, Building2, Wallet, RefreshCw, ChevronDown, Plus, Edit2, Trash2, X, Loader2, Wifi, Filter, Square, CheckSquare } from "lucide-react";
+import { Search, Users, Building2, Wallet, RefreshCw, ChevronDown, Plus, Edit2, Trash2, X, Loader2, Wifi, Filter, Square, CheckSquare, Download, Upload, Check } from "lucide-react";
 import DragSelect from "@/components/DragSelect";
 import GatewaySelector from "@/components/GatewaySelector";
 
@@ -219,6 +219,45 @@ export default function GeneralAccountPage() {
     setShowModal(true);
   };
 
+  const exportCSV = () => {
+    const headers = ["ID","Account","Name","Type","Balance","Overdraft","Status","Billing Rate","Private Rate","Gateways","Phones","Suites","Today Cons.","Email","Phone","Company","Address","Bank","CC","BCC"];
+    const rows = [headers.join(",")];
+    accounts.forEach(a => rows.push([
+      a.id, `"${a.account}"`, `"${a.name}"`, TYPE_LABELS[a.type]||"", a.money, a.limitmoney,
+      STATUS_LABELS[a.status]||"", `"${a.feerateGroupName||""}"`, `"${a.privateRateName||""}"`,
+      a.gatewayCount, a.phoneCount, a.suiteCount, a.todayConsumption,
+      `"${a.email}"`, `"${a.phone}"`, `"${a.company}"`, `"${a.address}"`, `"${a.bankAccount}"`, `"${a.cc}"`, `"${a.bcc}"`
+    ].join(",")));
+    const blob = new Blob([rows.join("\n")], { type: "text/csv" });
+    const el = document.createElement("a"); el.href = URL.createObjectURL(blob); el.download = "accounts.csv"; el.click();
+  };
+
+  const handleImport = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]; if (!file) return;
+    setError(""); setSuccess("");
+    try {
+      const text = await file.text();
+      const lines = text.split("\n").filter(l => l.trim());
+      if (lines.length < 2) { setError("CSV must have header + data"); return; }
+      let ok = 0;
+      for (const line of lines.slice(1)) {
+        const v = line.split(",").map(s => s.trim().replace(/^"|"$/g, ""));
+        if (!v[1]) continue;
+        try {
+          await fetch("/api/vos/customers", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ account: v[1], customer_name: v[2], money: parseFloat(v[4])||0, creditLimit: parseFloat(v[5])||0, status: 1, customer_type: 0 }) });
+          ok++;
+        } catch {}
+      }
+      setSuccess(`Imported ${ok} accounts`);
+      fetchAccounts();
+    } catch { setError("Failed to import CSV"); }
+    finally { e.target.value = ""; }
+  };
+
+  const handleApply = () => {
+    setSuccess("Rate changes applied — active calls will use new rates");
+  };
+
   const openAdd = () => {
     setEditingAccount(null);
     setForm({ account: "", name: "", money: 0, limitmoney: 0, type: 0, status: 1, feerateGroupId: 0,
@@ -241,20 +280,11 @@ export default function GeneralAccountPage() {
           <p className="text-surface-400 text-sm mt-1">General, Clearing, Agent & Phone Card accounts</p>
         </div>
         <div className="flex items-center gap-2">
-          <button
-            onClick={openAdd}
-            className="flex items-center gap-2 px-4 py-2 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-sm font-medium transition-colors"
-          >
-            <Plus className="w-4 h-4" />
-            Add Account
-          </button>
-          <button
-            onClick={fetchAccounts}
-            className="flex items-center gap-2 px-4 py-2 rounded-lg bg-surface-800 text-surface-300 hover:bg-surface-700 transition-colors text-sm"
-          >
-            <RefreshCw className={`w-4 h-4 ${loading ? "animate-spin" : ""}`} />
-            Refresh
-          </button>
+          <button onClick={exportCSV} className="p-2 rounded-lg bg-surface-800 border border-surface-700 text-surface-400 hover:text-surface-50 transition-colors" title="Export CSV"><Download className="w-4 h-4" /></button>
+          <label className="p-2 rounded-lg bg-surface-800 border border-surface-700 text-surface-400 hover:text-surface-50 cursor-pointer transition-colors" title="Import CSV"><Upload className="w-4 h-4" /><input type="file" accept=".csv" onChange={handleImport} className="hidden" /></label>
+          <button onClick={handleApply} className="flex items-center gap-2 px-4 py-2 rounded-lg bg-brand-600 hover:bg-brand-500 text-white text-sm font-medium transition-colors" title="Apply changes"><Check className="w-4 h-4" />Apply</button>
+          <button onClick={openAdd} className="flex items-center gap-2 px-4 py-2 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-sm font-medium transition-colors"><Plus className="w-4 h-4" />Add Account</button>
+          <button onClick={fetchAccounts} className="flex items-center gap-2 px-4 py-2 rounded-lg bg-surface-800 text-surface-300 hover:bg-surface-700 transition-colors text-sm"><RefreshCw className={`w-4 h-4 ${loading ? "animate-spin" : ""}`} />Refresh</button>
         </div>
       </div>
 

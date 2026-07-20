@@ -96,12 +96,18 @@ export async function POST(request: NextRequest) {
     const body = await request.json();
     const gwType = body.type || "mapping";
 
+    const table = gwType === "routing" ? ROUTING_TABLE : MAPPING_TABLE;
+    // VOS3000 tables lack AUTO_INCREMENT — manually get next ID
+    const [maxRow] = await queryVos<any>(`SELECT COALESCE(MAX(id), 0) + 1 AS next_id FROM ${table}`);
+    const nextId = Number(maxRow?.next_id || 1);
+
     let result;
     if (gwType === "routing") {
       result = await executeVos(
-        `INSERT INTO ${ROUTING_TABLE} (name, prefix, prefixstyle, clearingcustomer_id, capacity, priority, locktype, memo, password, protocol, remoteips, signalport)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        `INSERT INTO ${ROUTING_TABLE} (id, name, prefix, prefixstyle, clearingcustomer_id, capacity, priority, locktype, memo, password, protocol, remoteips, signalport)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         [
+          nextId,
           body.name || "",
           body.prefix || "",
           body.prefixstyle || 0,
@@ -118,9 +124,10 @@ export async function POST(request: NextRequest) {
       );
     } else {
       result = await executeVos(
-        `INSERT INTO ${MAPPING_TABLE} (name, customer_id, capacity, priority, locktype, memo, password, remoteips)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+        `INSERT INTO ${MAPPING_TABLE} (id, name, customer_id, capacity, priority, locktype, memo, password, remoteips)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         [
+          nextId,
           body.name || "",
           body.customer_id || 0,
           body.capacity || 30,
@@ -133,9 +140,24 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    return NextResponse.json({ success: true, id: result.insertId });
+    return NextResponse.json({ success: true, id: nextId });
   } catch (error) {
     const message = error instanceof Error ? error.message : "Unknown error";
     return NextResponse.json({ error: message }, { status: 500 });
+  }
+}
+
+export async function DELETE(request: NextRequest) {
+  const user = await verifySession();
+  if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  try {
+    const type = request.nextUrl.searchParams.get("type") || "mapping";
+    const id = request.nextUrl.searchParams.get("id");
+    if (!id) return NextResponse.json({ error: "ID required" }, { status: 400 });
+    const table = type === "routing" ? ROUTING_TABLE : MAPPING_TABLE;
+    await executeVos(`DELETE FROM ${table} WHERE id = ?`, [id]);
+    return NextResponse.json({ success: true });
+  } catch(e) {
+    return NextResponse.json({ error: e instanceof Error ? e.message : "Failed" }, { status: 500 });
   }
 }

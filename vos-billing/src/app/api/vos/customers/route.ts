@@ -65,22 +65,45 @@ export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
 
+    // VOS3000 e_customer.id is NOT auto-increment — manually get next ID
+    const [maxRow] = await queryVos<any>("SELECT COALESCE(MAX(id), 0) + 1 AS next_id FROM e_customer");
+    const nextId = Number(maxRow?.next_id || 1);
+
     const result = await executeVos(
-      `INSERT INTO e_customer (account, name, status, money, limitmoney, memo)
-       VALUES (?, ?, ?, ?, ?, ?)`,
+      `INSERT INTO e_customer (id, customer_id, account, name, status, money, limitmoney, memo, type, locktype)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [
+        nextId,
+        nextId,
         body.account || body.customer_name || "",
         body.name || body.customer_name || "",
         body.status ?? 0,
         body.balance || 0,
         body.creditLimit || 0,
         body.remark || "",
+        body.customer_type ?? 0,
+        0, // locktype=0 unlocked
       ]
     );
 
-    return NextResponse.json({ success: true, id: result.insertId });
+    return NextResponse.json({ success: true, id: nextId });
   } catch (error) {
     const message = error instanceof Error ? error.message : "Unknown error";
     return NextResponse.json({ error: message }, { status: 500 });
+  }
+}
+
+export async function DELETE(request: NextRequest) {
+  const user = await verifySession();
+  if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  try {
+    const id = request.nextUrl.searchParams.get("id");
+    if (!id) return NextResponse.json({ error: "ID required" }, { status: 400 });
+    // Also clean up associated clearing account
+    await executeVos("DELETE FROM e_clearing_account WHERE customer_id = ?", [id]);
+    await executeVos("DELETE FROM e_customer WHERE id = ?", [id]);
+    return NextResponse.json({ success: true });
+  } catch(e) {
+    return NextResponse.json({ error: e instanceof Error ? e.message : "Failed" }, { status: 500 });
   }
 }
