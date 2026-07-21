@@ -49,16 +49,40 @@ export async function GET(request: NextRequest) {
         WHERE r.feerategroup_id = ?
         ORDER BY r.feeprefix ASC`, [parseInt(groupId)]
       );
-      const rates = rows.map((r) => ({
-        id: Number(r.id), prefix: String(r.feeprefix||""), areacode: String(r.areacode||""),
-        locktype: Number(r.locktype)||0, fee: Number(r.fee)||0, tax: Number(r.tax)||0,
-        period: Number(r.period)||0, ivrfee: Number(r.ivrfee)||0, ivrperiod: Number(r.ivrperiod)||0,
-        type: Number(r.type)||0, feerategroup_id: Number(r.feerategroup_id),
-        group_name: String(r.group_name||""), privilege: Number(r.privilege)||0,
-        fakeminute: Number(r.fakeminute)||60, isprivate: Number(r.isprivate)||0,
-        group_memo: String(r.group_memo||""),
-        area_name: String(r.area_name||""),
-      }));
+
+      // Try to load planned rates (defensive — table may not exist)
+      const plans = new Map<number, any>();
+      try {
+        const rateIds = rows.map(r => Number(r.id));
+        if (rateIds.length > 0) {
+          const planRows = await queryVos<any>(
+            `SELECT feerate_id, fee, period, segment, execute_time FROM e_feerate_plan WHERE feerate_id IN (${rateIds.join(",")})`
+          ) as any[];
+          for (const p of planRows) {
+            const rid = Number(p.feerate_id);
+            if (!plans.has(rid)) plans.set(rid, p);
+          }
+        }
+      } catch { /* e_feerate_plan may not exist */ }
+
+      const rates = rows.map((r) => {
+        const rid = Number(r.id);
+        const plan = plans.get(rid);
+        return {
+          id: rid, prefix: String(r.feeprefix||""), areacode: String(r.areacode||""),
+          locktype: Number(r.locktype)||0, fee: Number(r.fee)||0, tax: Number(r.tax)||0,
+          period: Number(r.period)||0, ivrfee: Number(r.ivrfee)||0, ivrperiod: Number(r.ivrperiod)||0,
+          type: Number(r.type)||0, feerategroup_id: Number(r.feerategroup_id),
+          group_name: String(r.group_name||""), privilege: Number(r.privilege)||0,
+          fakeminute: Number(r.fakeminute)||60, isprivate: Number(r.isprivate)||0,
+          group_memo: String(r.group_memo||""),
+          area_name: String(r.area_name||""),
+          plan_fee: plan ? Number(plan.fee)||0 : 0,
+          plan_period: plan ? Number(plan.period)||0 : 0,
+          plan_segment: plan ? Number(plan.segment)||0 : 0,
+          plan_execute_time: plan?.execute_time ? Number(plan.execute_time) : 0,
+        };
+      });
       return NextResponse.json({ rates });
     }
 

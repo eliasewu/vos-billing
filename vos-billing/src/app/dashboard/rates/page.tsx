@@ -34,6 +34,10 @@ interface Rate {
   fakeminute: number;
   isprivate: number;
   area_name: string;
+  plan_fee: number;
+  plan_period: number;
+  plan_segment: number;
+  plan_execute_time: number;
 }
 
 const TYPE_LABELS: Record<number, string> = {
@@ -378,6 +382,8 @@ export default function RatesPage() {
                             <th className="px-3 py-2.5 text-center text-[11px] font-semibold uppercase text-surface-400">Cycle / Inc</th>
                             <th className="px-3 py-2.5 text-right text-[11px] font-semibold uppercase text-surface-400">IVR Fee</th>
                             <th className="px-3 py-2.5 text-center text-[11px] font-semibold uppercase text-surface-400">IVR Period</th>
+                            <th className="px-3 py-2.5 text-right text-[11px] font-semibold uppercase text-surface-400">Plan Rate</th>
+                            <th className="px-3 py-2.5 text-center text-[11px] font-semibold uppercase text-surface-400">Plan Cycle</th>
                             <th className="px-3 py-2.5 text-center text-[11px] font-semibold uppercase text-surface-400">Type</th>
                             <th className="px-3 py-2.5 text-center text-[11px] font-semibold uppercase text-surface-400">Status</th>
                             <th className="px-3 py-2.5 text-center text-[11px] font-semibold uppercase text-surface-400 w-20">Actions</th>
@@ -419,6 +425,16 @@ export default function RatesPage() {
                               </td>
                               <td className="px-3 py-2.5 text-surface-400 text-center text-xs">
                                 {r.ivrperiod > 0 ? `${r.ivrperiod}s` : "—"}
+                              </td>
+                              <td className="px-3 py-2.5 font-mono text-surface-50 text-right text-xs">
+                                {r.plan_fee > 0 ? `$${Number(r.plan_fee).toFixed(6)}` : "—"}
+                              </td>
+                              <td className="px-3 py-2.5 text-center">
+                                {r.plan_period > 0 ? (
+                                  <span className="px-1.5 py-0.5 rounded text-[10px] bg-amber-500/10 text-amber-400 font-mono">{r.plan_period}s</span>
+                                ) : (
+                                  <span className="text-surface-600">—</span>
+                                )}
                               </td>
                               <td className="px-3 py-2.5 text-center">
                                 <span className="px-1.5 py-0.5 rounded text-[10px] font-medium bg-surface-800 text-surface-400">

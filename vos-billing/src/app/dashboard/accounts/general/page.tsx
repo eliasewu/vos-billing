@@ -1,7 +1,8 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { Search, Users, Building2, Wallet, RefreshCw, ChevronDown, Plus, Edit2, Trash2, X, Loader2, Wifi, Filter, Square, CheckSquare, Download, Upload, Check } from "lucide-react";
+import { useRouter } from "next/navigation";
+import { Search, Users, Building2, Wallet, RefreshCw, ChevronDown, Plus, Edit2, Trash2, X, Loader2, Wifi, Filter, Square, CheckSquare, Download, Upload, Check, ExternalLink } from "lucide-react";
 import DragSelect from "@/components/DragSelect";
 import GatewaySelector from "@/components/GatewaySelector";
 
@@ -37,6 +38,7 @@ const TYPE_LABELS: Record<number, string> = { 0: "General", 1: "Clearing", 2: "A
 const STATUS_LABELS: Record<number, string> = { 0: "Inactive", 1: "Active", 2: "Locked" };
 
 export default function GeneralAccountPage() {
+  const router = useRouter();
   const [accounts, setAccounts] = useState<Account[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
@@ -485,7 +487,12 @@ export default function GeneralAccountPage() {
                     <td className="px-3 py-3 text-center"><button onClick={() => toggleSelect(a.id)} className="text-surface-500 hover:text-surface-300">{selectedIds.has(a.id) ? <CheckSquare className="w-4 h-4 text-brand-400" /> : <Square className="w-4 h-4" />}</button></td>
                     <td className="px-4 py-3 text-surface-500 text-xs">{a.id}</td>
                     <td className="px-4 py-3 text-surface-300 font-mono text-xs">{a.account}</td>
-                    <td className="px-4 py-3 text-surface-50 font-medium">{a.name}</td>
+                    <td className="px-4 py-3 text-surface-50 font-medium">
+                      <button onClick={() => router.push(`/dashboard/accounts/${a.id}`)} className="text-surface-50 hover:text-brand-400 transition-colors flex items-center gap-1 text-left group">
+                        {a.name}
+                        <ExternalLink className="w-3 h-3 text-surface-600 opacity-0 group-hover:opacity-100 transition-opacity" />
+                      </button>
+                    </td>
                     <td className="px-4 py-3">
                       <span className={`inline-flex px-2 py-0.5 rounded text-xs font-medium ${
                         a.type === 1 ? "bg-amber-500/10 text-amber-400" :
@@ -533,14 +540,29 @@ export default function GeneralAccountPage() {
                       {a.todayConsumption > 0 ? <span className="text-amber-400">{formatMoney(a.todayConsumption)}</span> : <span className="text-surface-500">$0</span>}
                     </td>
                     <td className="px-4 py-3 text-center text-surface-300 text-xs">
-                      <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium ${a.gatewayCount > 0 ? "bg-violet-500/10 text-violet-400" : "bg-surface-800 text-surface-500"}`}>
+                      <button
+                        onClick={() => {
+                          const gwPath = a.type === 1 ? "/dashboard/operation/gateways/routing" : "/dashboard/operation/gateways/mapping";
+                          router.push(`${gwPath}?customer=${a.id}&name=${encodeURIComponent(a.name)}`);
+                        }}
+                        title={`Manage ${a.type === 1 ? "routing" : "mapping"} gateways for ${a.name}`}
+                        className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium transition-colors cursor-pointer ${
+                          a.gatewayCount > 0 ? "bg-violet-500/10 text-violet-400 hover:bg-violet-500/20" : "bg-surface-800 text-surface-500 hover:bg-surface-700 hover:text-surface-300"
+                        }`}
+                      >
                         {a.gatewayCount}
-                      </span>
+                      </button>
                     </td>
                     <td className="px-4 py-3 text-center text-surface-300 text-xs">
-                      <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium ${a.phoneCount > 0 ? "bg-cyan-500/10 text-cyan-400" : "bg-surface-800 text-surface-500"}`}>
+                      <button
+                        onClick={() => router.push(`/dashboard/operation/phone?customer=${a.id}&name=${encodeURIComponent(a.name)}`)}
+                        title={`Manage phones for ${a.name}`}
+                        className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium transition-colors cursor-pointer ${
+                          a.phoneCount > 0 ? "bg-cyan-500/10 text-cyan-400 hover:bg-cyan-500/20" : "bg-surface-800 text-surface-500 hover:bg-surface-700 hover:text-surface-300"
+                        }`}
+                      >
                         {a.phoneCount}
-                      </span>
+                      </button>
                     </td>
                     <td className="px-4 py-3 text-center text-surface-300 text-xs">
                       <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium ${a.suiteCount > 0 ? "bg-pink-500/10 text-pink-400" : "bg-surface-800 text-surface-500"}`}>

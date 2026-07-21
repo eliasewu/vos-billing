@@ -1,7 +1,8 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { GitBranch, Search, RefreshCw, Server, Shield, Users, Plus, Edit2, Trash2, X } from "lucide-react";
+import { useSearchParams, useRouter } from "next/navigation";
+import { GitBranch, Search, RefreshCw, Server, Shield, Users, Plus, Edit2, Trash2, X, ArrowLeft } from "lucide-react";
 
 interface MappingGateway {
   id: number;
@@ -25,6 +26,11 @@ interface MappingGateway {
 const STATUS_LABELS: Record<number, string> = { 0: "Active", 1: "Locked" };
 
 export default function MappingGatewayPage() {
+  const searchParams = useSearchParams();
+  const router = useRouter();
+  const preselectedCustomerId = parseInt(searchParams.get("customer") || "0");
+  const preselectedCustomerName = searchParams.get("name") || "";
+
   const [gateways, setGateways] = useState<MappingGateway[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
@@ -32,7 +38,7 @@ export default function MappingGatewayPage() {
   const [showModal, setShowModal] = useState(false);
   const [editingGw, setEditingGw] = useState<MappingGateway | null>(null);
   const [saving, setSaving] = useState(false);
-  const [form, setForm] = useState({ name:"", password:"", lockType:0, callLevel:0, capacity:0, priority:0, registerType:0, remoteIps:"", rtpForwardType:0, gatewayGroups:"", routingGatewayGroups:"", memo:"", customerId:0, mbxId:0 });
+  const [form, setForm] = useState({ name:"", password:"", lockType:0, callLevel:0, capacity:0, priority:0, registerType:0, remoteIps:"", rtpForwardType:0, gatewayGroups:"", routingGatewayGroups:"", memo:"", customerId: preselectedCustomerId, mbxId:0 });
 
   const fetchGateways = async () => {
     setLoading(true);
@@ -73,14 +79,40 @@ export default function MappingGatewayPage() {
 
   const openAdd = () => {
     setEditingGw(null);
-    setForm({ name:"", password:"", lockType:0, callLevel:0, capacity:0, priority:0, registerType:0, remoteIps:"", rtpForwardType:0, gatewayGroups:"", routingGatewayGroups:"", memo:"", customerId:0, mbxId:0 });
+    setForm({ name:"", password:"", lockType:0, callLevel:0, capacity:0, priority:0, registerType:0, remoteIps:"", rtpForwardType:0, gatewayGroups:"", routingGatewayGroups:"", memo:"", customerId: preselectedCustomerId, mbxId:0 });
     setShowModal(true);
   };
+
+  // Auto-open add modal if customer_id was preselected, then strip params
+  useEffect(() => {
+    if (preselectedCustomerId > 0) {
+      setEditingGw(null);
+      setForm({ name:"", password:"", lockType:0, callLevel:0, capacity:0, priority:0, registerType:0, remoteIps:"", rtpForwardType:0, gatewayGroups:"", routingGatewayGroups:"", memo:"", customerId: preselectedCustomerId, mbxId:0 });
+      setShowModal(true);
+      router.replace("/dashboard/operation/gateways/mapping");
+    }
+  }, []);
 
   return (
     <div className="p-6 space-y-6">
       <div className="flex items-center justify-between">
-        <div><h1 className="text-2xl font-bold text-surface-50">Mapping Gateway</h1><p className="text-surface-400 text-sm mt-1">Customer / Origination gateway management</p></div>
+        <div>
+          <div className="flex items-center gap-3">
+            {preselectedCustomerName && (
+              <button onClick={() => router.push("/dashboard/accounts/general")} className="p-1.5 rounded-lg bg-surface-800 border border-surface-700 text-surface-400 hover:text-surface-50" title="Back to accounts">
+                <ArrowLeft className="w-4 h-4" />
+              </button>
+            )}
+            <h1 className="text-2xl font-bold text-surface-50">Mapping Gateway</h1>
+          </div>
+          <p className="text-surface-400 text-sm mt-1">
+            {preselectedCustomerName ? (
+              <>Customer: <span className="text-surface-50 font-medium">{preselectedCustomerName}</span> (ID: {preselectedCustomerId}) — Customer / Origination gateway management</>
+            ) : (
+              "Customer / Origination gateway management"
+            )}
+          </p>
+        </div>
         <div className="flex items-center gap-2">
           <button onClick={openAdd} className="flex items-center gap-2 px-4 py-2 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-sm font-medium"><Plus className="w-4 h-4"/>Add Gateway</button>
           <button onClick={fetchGateways} className="flex items-center gap-2 px-4 py-2 rounded-lg bg-surface-800 text-surface-300 hover:bg-surface-700 transition-colors text-sm"><RefreshCw className={`w-4 h-4 ${loading ? "animate-spin" : ""}`} />Refresh</button>

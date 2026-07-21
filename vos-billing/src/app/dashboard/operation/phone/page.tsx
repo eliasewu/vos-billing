@@ -1,11 +1,17 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { Phone, Search, RefreshCw, Server, Plus, Edit2, Trash2, X } from "lucide-react";
+import { useSearchParams, useRouter } from "next/navigation";
+import { Phone, Search, RefreshCw, Server, Plus, Edit2, Trash2, X, ArrowLeft } from "lucide-react";
 
 interface VoipPhone { id: number; e164: string; capacity: number; callLevel: number; status: number; customerName: string | null; }
 
 export default function PhoneOperationPage() {
+  const searchParams = useSearchParams();
+  const router = useRouter();
+  const preselectedCustomerId = parseInt(searchParams.get("customer") || "0");
+  const preselectedCustomerName = searchParams.get("name") || "";
+
   const [phones, setPhones] = useState<VoipPhone[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
@@ -13,7 +19,7 @@ export default function PhoneOperationPage() {
   const [showModal, setShowModal] = useState(false);
   const [editingPhone, setEditingPhone] = useState<VoipPhone | null>(null);
   const [saving, setSaving] = useState(false);
-  const [form, setForm] = useState({ e164: "", password: "", capacity: 2, callLevel: 0, status: 0, customerId: 0 });
+  const [form, setForm] = useState({ e164: "", password: "", capacity: 2, callLevel: 0, status: 0, customerId: preselectedCustomerId });
 
   const fetchPhones = async () => {
     setLoading(true); setError("");
@@ -51,16 +57,41 @@ export default function PhoneOperationPage() {
 
   const openAdd = () => {
     setEditingPhone(null);
-    setForm({ e164: "", password: "", capacity: 2, callLevel: 0, status: 0, customerId: 0 });
+    setForm({ e164: "", password: "", capacity: 2, callLevel: 0, status: 0, customerId: preselectedCustomerId });
     setShowModal(true);
   };
+
+  useEffect(() => {
+    if (preselectedCustomerId > 0) {
+      setEditingPhone(null);
+      setForm({ e164: "", password: "", capacity: 2, callLevel: 0, status: 0, customerId: preselectedCustomerId });
+      setShowModal(true);
+      router.replace("/dashboard/operation/phone");
+    }
+  }, []);
 
   const filtered = phones.filter(p => p.e164.includes(search) || (p.customerName || "").toLowerCase().includes(search.toLowerCase()));
 
   return (
     <div className="p-6 space-y-6">
       <div className="flex items-center justify-between">
-        <div><h1 className="text-2xl font-bold text-surface-50">Phone Operation</h1><p className="text-surface-400 text-sm mt-1">{phones.length} phone numbers registered</p></div>
+        <div>
+          <div className="flex items-center gap-3">
+            {preselectedCustomerName && (
+              <button onClick={() => router.push("/dashboard/accounts/general")} className="p-1.5 rounded-lg bg-surface-800 border border-surface-700 text-surface-400 hover:text-surface-50" title="Back to accounts">
+                <ArrowLeft className="w-4 h-4" />
+              </button>
+            )}
+            <h1 className="text-2xl font-bold text-surface-50">Phone Operation</h1>
+          </div>
+          <p className="text-surface-400 text-sm mt-1">
+            {preselectedCustomerName ? (
+              <>Account: <span className="text-surface-50 font-medium">{preselectedCustomerName}</span> (ID: {preselectedCustomerId}) — {phones.length} phone numbers registered</>
+            ) : (
+              `${phones.length} phone numbers registered`
+            )}
+          </p>
+        </div>
         <div className="flex items-center gap-2">
           <button onClick={openAdd} className="flex items-center gap-2 px-4 py-2 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-sm font-medium"><Plus className="w-4 h-4" />Add Phone</button>
           <button onClick={fetchPhones} className="flex items-center gap-2 px-4 py-2 rounded-lg bg-surface-800 text-surface-300 hover:bg-surface-700 text-sm"><RefreshCw className={`w-4 h-4 ${loading ? "animate-spin" : ""}`} />Refresh</button>
