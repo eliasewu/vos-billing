@@ -76,6 +76,7 @@ export default function RoutingGatewayPage() {
   const [deletingIds, setDeletingIds] = useState<Set<number>>(new Set());
   const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
   const [activeTab, setActiveTab] = useState<TabKey>("general");
+  const [editingMediaId, setEditingMediaId] = useState<number | null>(null);
 
   const [form, setForm] = useState({
     name: "", prefix: "", password: "", customerPassword: "",
@@ -143,6 +144,42 @@ export default function RoutingGatewayPage() {
       await fetch(url, { method, headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
       setShowModal(false); setEditingGw(null); setActiveTab("general"); fetchGateways();
     } catch { setError("Failed to save"); } finally { setSaving(false); }
+  };
+
+  const quickUpdateMedia = async (gwId: number, newVal: number) => {
+    const prevVal = gateways.find(g => g.id === gwId)?.rtpForwardType;
+    // Optimistic update
+    setGateways(prev => prev.map(g => g.id === gwId ? { ...g, rtpForwardType: newVal } : g));
+    try {
+      // Send full gateway object to avoid overwriting other fields
+      const full = gateways.find(g => g.id === gwId);
+      if (!full) return;
+      await fetch(`/api/vos/gateways/routing/${gwId}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          name: full.name, prefix: full.prefix, password: full.password, customerPassword: full.customerPassword,
+          lockType: full.lockType, callLevel: full.callLevel, capacity: full.capacity, priority: full.priority,
+          remoteIps: full.remoteIps, rtpForwardType: newVal, gatewayGroups: full.gatewayGroups, memo: full.memo,
+          clearingCustomerId: full.clearingCustomerId,
+          callerPrefixesAllow: full.callerPrefixesAllow, callerPrefixes: full.callerPrefixes,
+          calleePrefixesAllow: full.calleePrefixesAllow, calleePrefixes: full.calleePrefixes,
+          forwardingPrefixes: full.forwardingPrefixes,
+          callerBlacklistPolicy: full.callerBlacklistPolicy, calleeBlacklistPolicy: full.calleeBlacklistPolicy,
+          rewriteRulesInCaller: full.rewriteInCaller, rewriteRulesInCallee: full.rewriteInCallee,
+          denyCallerCallee: full.denyCallerCallee,
+          scheduledCapacity: full.scheduledCapacity, scheduledPriority: full.scheduledPriority,
+          scheduledCallinPrefixes: full.scheduledCallinPrefixes, scheduledRewriteRulesIn: full.scheduledRewriteRulesIn,
+          sipCodecs: full.sipCodecs, h323Codecs: full.h323Codecs,
+          timeoutInvite: full.timeoutInvite, timeoutRinging: full.timeoutRinging,
+        }),
+      });
+    } catch {
+      // Revert on failure
+      setGateways(prev => prev.map(g => g.id === gwId ? { ...g, rtpForwardType: prevVal ?? 0 } : g));
+      setError("Failed to update Media Proxy");
+    }
+    setEditingMediaId(null);
   };
 
   const handleDelete = async (id: number) => {
@@ -300,9 +337,27 @@ export default function RoutingGatewayPage() {
             ) : <span className="text-surface-300">—</span>
           )},
           { key: "rtpForwardType", label: "Media", textAlign: "center" as const, render: (g: RoutingGateway) => (
-            <span className={`inline-flex px-1.5 py-0.5 rounded text-[10px] font-medium ${g.rtpForwardType === 2 ? "bg-violet-500/10 text-violet-400" : g.rtpForwardType === 1 ? "bg-emerald-500/10 text-emerald-400" : "bg-surface-800 text-surface-500"}`}>
-              {RTP_LABELS[g.rtpForwardType] || "Off"}
-            </span>
+            editingMediaId === g.id ? (
+              <select
+                value={g.rtpForwardType}
+                onChange={e => quickUpdateMedia(g.id, parseInt(e.target.value))}
+                onBlur={() => setEditingMediaId(null)}
+                autoFocus
+                className="px-1.5 py-0.5 rounded text-[10px] font-medium bg-surface-800 border border-brand-500/50 text-surface-50 focus:outline-none cursor-pointer"
+              >
+                <option value={0}>Off</option>
+                <option value={1}>On</option>
+                <option value={2}>Auto</option>
+              </select>
+            ) : (
+              <button
+                onClick={() => setEditingMediaId(g.id)}
+                className={`inline-flex px-1.5 py-0.5 rounded text-[10px] font-medium hover:opacity-80 cursor-pointer transition-opacity ${g.rtpForwardType === 2 ? "bg-violet-500/10 text-violet-400" : g.rtpForwardType === 1 ? "bg-emerald-500/10 text-emerald-400" : "bg-surface-800 text-surface-500"}`}
+                title="Click to change Media Proxy"
+              >
+                {RTP_LABELS[g.rtpForwardType] || "Off"}
+              </button>
+            )
           )},
           { key: "lockType", label: "Lock", textAlign: "center" as const, render: (g: RoutingGateway) => (
             <span className={`inline-flex px-1.5 py-0.5 rounded text-[10px] font-medium ${g.lockType === 0 ? "bg-emerald-500/10 text-emerald-400" : "bg-red-500/10 text-red-400"}`}>
