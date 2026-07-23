@@ -2,12 +2,10 @@
 # =============================================================================
 # VOS3000 Billing Platform — One-Line Installer
 # Usage:
-#   curl -sk https://51.161.47.101:3443/dl/install.sh | bash
-#   or:
-#   git clone https://51.161.47.101:3443/repo.git vos-billing && cd vos-billing && bash install.sh
+#   curl -sSL https://raw.githubusercontent.com/eliasewu/vos-billing/main/install.sh | bash
 # =============================================================================
 
-REPO_URL="https://51.161.47.101:3443/repo.git"
+REPO_URL="https://github.com/eliasewu/vos-billing.git"
 set -e
 
 RED='\033[0;31m'; GREEN='\033[0;32m'; CYAN='\033[0;36m'; NC='\033[0m'
