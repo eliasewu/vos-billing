@@ -3,6 +3,7 @@
 import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { Zap, LogIn, AlertCircle, Eye, EyeOff, Shield, Server, Fingerprint, UserCog, Users } from "lucide-react";
+import TawkToChat from "@/components/TawkToChat";
 
 export default function HomePage() {
   const router = useRouter();
@@ -344,10 +345,13 @@ export default function HomePage() {
 
           {/* Help text */}
           <p className="mt-5 text-center text-xs text-surface-600">
-            Need help? Contact your system administrator
+            Need help? Chat with our support team
           </p>
         </div>
       </div>
+
+      {/* Tawk.to Live Chat */}
+      <TawkToChat />
     </div>
   );
 }

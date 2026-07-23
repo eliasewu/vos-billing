@@ -2,9 +2,12 @@
 
 import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
-import { Search, Users, Building2, Wallet, RefreshCw, ChevronDown, Plus, Edit2, Trash2, X, Loader2, Wifi, Filter, Square, CheckSquare, Download, Upload, Check, ExternalLink } from "lucide-react";
+import { Search, Users, Building2, Wallet, RefreshCw, Plus, Edit2, Trash2, X, Loader2, Wifi, Filter, Download, Upload, Check, ExternalLink, CreditCard, Smartphone, Shield, Layers } from "lucide-react";
 import DragSelect from "@/components/DragSelect";
 import GatewaySelector from "@/components/GatewaySelector";
+import { safeErrorString } from "@/lib/utils";
+import DataTable from "@/components/DataTable";
+import { moneyRender, actionsRender, statusToggleRender } from "@/components/DataTableHelpers";
 
 interface Account {
   id: number;
@@ -18,6 +21,8 @@ interface Account {
   lastupdatetime: number;
   feerateGroupId: number;
   feerateGroupName: string | null;
+  feerateGroupPrivateId: number;
+  feerateGroupPrivateName: string | null;
   feerateGroup2Name: string | null;
   feerateGroup3Name: string | null;
   privateRateName: string | null;
@@ -44,6 +49,7 @@ export default function GeneralAccountPage() {
   const [error, setError] = useState("");
   const [search, setSearch] = useState("");
   const [typeFilter, setTypeFilter] = useState("");
+  const [typeTab, setTypeTab] = useState(""); // ""=all, "0"=general, "3"=phonecard, "1"=clearing
   const [statusFilter, setStatusFilter] = useState("");
   const [rateGroupFilter, setRateGroupFilter] = useState("");
   const [balanceSignFilter, setBalanceSignFilter] = useState("");
@@ -56,7 +62,7 @@ export default function GeneralAccountPage() {
   const [editingAccount, setEditingAccount] = useState<Account | null>(null);
   const [saving, setSaving] = useState(false);
   const [form, setForm] = useState({ account:"", name:"", money:0, limitmoney:0, type:0, status:1, feerateGroupId: 0,
-    email:"", phone:"", company:"", address:"", bankAccount:"", cc:"", bcc:"" });
+    feerateGroupPrivateId: 0, email:"", phone:"", company:"", address:"", bankAccount:"", cc:"", bcc:"" });
   const [selectedGatewayIds, setSelectedGatewayIds] = useState<number[]>([]);
   const [rateGroups, setRateGroups] = useState<{ id: number; name: string }[]>([]);
   const [togglingIds, setTogglingIds] = useState<Set<number>>(new Set());
@@ -78,7 +84,7 @@ export default function GeneralAccountPage() {
       if (balanceSignFilter) params.set("balanceSign", balanceSignFilter);
       const res = await fetch(`/api/vos/accounts?${params}`);
       const data = await res.json();
-      if (data.error) setError(data.error);
+      if (data.error) setError(safeErrorString(data.error));
       else setAccounts(data.accounts || []);
     } catch {
       setError("Failed to load accounts");
@@ -122,7 +128,7 @@ export default function GeneralAccountPage() {
       const payload: Record<string, any> = { ...coreForm, email, phone, company, address, bankAccount, cc, bcc };
       const res = await fetch(url, { method, headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) });
       const data = await res.json();
-      if (data.error) { setError(data.error); return; }
+      if (data.error) { setError(safeErrorString(data.error)); return; }
 
       // For new accounts, use returned ID
       if (!accountId && data.id) accountId = data.id;
@@ -151,7 +157,7 @@ export default function GeneralAccountPage() {
         body: JSON.stringify({ status: newStatus }),
       });
       const data = await res.json();
-      if (data.error) setError(data.error);
+      if (data.error) setError(safeErrorString(data.error));
       else {
         setAccounts(prev => prev.map(a => a.id === id ? { ...a, status: newStatus } : a));
       }
@@ -200,7 +206,7 @@ export default function GeneralAccountPage() {
     try {
       const res = await fetch(`/api/vos/accounts/${id}`, { method: "DELETE" });
       const data = await res.json();
-      if (data.error) setError(data.error);
+      if (data.error) setError(safeErrorString(data.error));
       else fetchAccounts();
     } catch { setError("Failed to delete account"); }
   };
@@ -208,7 +214,7 @@ export default function GeneralAccountPage() {
   const openEdit = async (a: Account) => {
     setEditingAccount(a);
     setForm({ account: a.account, name: a.name, money: a.money, limitmoney: a.limitmoney, type: a.type, status: a.status, feerateGroupId: a.feerateGroupId || 0,
-      email: a.email || "", phone: a.phone || "", company: a.company || "", address: a.address || "", bankAccount: a.bankAccount || "", cc: a.cc || "", bcc: a.bcc || "" });
+      feerateGroupPrivateId: a.feerateGroupPrivateId || 0, email: a.email || "", phone: a.phone || "", company: a.company || "", address: a.address || "", bankAccount: a.bankAccount || "", cc: a.cc || "", bcc: a.bcc || "" });
     // Fetch currently assigned gateway IDs for this account
     try {
       const res = await fetch(`/api/vos/gateways?type=mapping`);
@@ -256,22 +262,40 @@ export default function GeneralAccountPage() {
     finally { e.target.value = ""; }
   };
 
-  const handleApply = () => {
-    setSuccess("Rate changes applied — active calls will use new rates");
+  const handleApply = async () => {
+    setError(""); setSuccess("");
+    try {
+      const res = await fetch("/api/vos/rates/apply", { method: "POST" });
+      const data = await res.json();
+      if (data.error) setError(safeErrorString(data.error));
+      else { setSuccess(data.message || "Rate changes applied — active calls will use new rates"); fetchAccounts(); }
+    } catch { setError("Failed to apply — VOS3000 reload may be required"); }
   };
 
   const openAdd = () => {
     setEditingAccount(null);
     setForm({ account: "", name: "", money: 0, limitmoney: 0, type: 0, status: 1, feerateGroupId: 0,
-      email: "", phone: "", company: "", address: "", bankAccount: "", cc: "", bcc: "" });
+      feerateGroupPrivateId: 0, email: "", phone: "", company: "", address: "", bankAccount: "", cc: "", bcc: "" });
     setSelectedGatewayIds([]);
     setShowModal(true);
   };
 
+  // Sync typeTab to typeFilter for the existing filter logic
+  const handleTabChange = (tab: string) => {
+    setTypeTab(tab);
+    setTypeFilter(tab);
+  };
+
+  // Compute counts for the current view (data is already filtered server-side by typeFilter)
   const totalBalance = accounts.reduce((s, a) => s + a.money, 0);
   const activeCount = accounts.filter((a) => a.status === 1).length;
   const clearingCount = accounts.filter((a) => a.type === 1).length;
   const generalCount = accounts.filter((a) => a.type === 0).length;
+  const phoneCardCount = accounts.filter((a) => a.type === 3).length;
+  const phoneCardActiveSuites = accounts.filter(a => a.type === 3).reduce((s, a) => s + a.suiteCount, 0);
+  const totalPhones = accounts.filter(a => a.type === 3).reduce((s, a) => s + a.phoneCount, 0);
+  const phoneCardBalance = accounts.filter(a => a.type === 3).reduce((s, a) => s + a.money, 0);
+  const isPhoneCardTab = typeTab === "3";
 
   return (
     <div className="p-6 space-y-6">
@@ -279,7 +303,7 @@ export default function GeneralAccountPage() {
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-bold text-surface-50">General Account</h1>
-          <p className="text-surface-400 text-sm mt-1">General, Clearing, Agent & Phone Card accounts</p>
+          <p className="text-surface-400 text-sm mt-1">General, Phone Card & Clearing accounts</p>
         </div>
         <div className="flex items-center gap-2">
           <button onClick={exportCSV} className="p-2 rounded-lg bg-surface-800 border border-surface-700 text-surface-400 hover:text-surface-50 transition-colors" title="Export CSV"><Download className="w-4 h-4" /></button>
@@ -329,32 +353,104 @@ export default function GeneralAccountPage() {
         </div>
         <div className="bg-surface-900 border border-surface-700/50 rounded-xl p-5">
           <div className="flex items-center gap-3 mb-3">
-            <div className="w-10 h-10 rounded-lg bg-violet-500/10 flex items-center justify-center">
-              <Users className="w-5 h-5 text-violet-400" />
+            <div className={`w-10 h-10 rounded-lg flex items-center justify-center ${isPhoneCardTab ? "bg-cyan-500/10" : "bg-violet-500/10"}`}>
+              {isPhoneCardTab ? <CreditCard className="w-5 h-5 text-cyan-400" /> : <Users className="w-5 h-5 text-violet-400" />}
             </div>
             <div>
-              <p className="text-2xl font-bold text-surface-50">{generalCount}</p>
-              <p className="text-xs text-surface-400">General</p>
+              <p className="text-2xl font-bold text-surface-50">{isPhoneCardTab ? phoneCardCount : generalCount}</p>
+              <p className="text-xs text-surface-400">{isPhoneCardTab ? "Phone Cards" : "General"}</p>
             </div>
           </div>
-          <p className="text-xs text-surface-500">+{clearingCount} clearing | {accounts.reduce((s,a) => s + a.suiteCount, 0)} suites</p>
+          <p className="text-xs text-surface-500">
+            {isPhoneCardTab
+              ? `${phoneCardActiveSuites} active suites | ${formatMoney(phoneCardBalance)} balance`
+              : `+${clearingCount} clearing | +${phoneCardCount} phone cards`
+            }
+          </p>
         </div>
       </div>
 
-      {/* Search & Enhanced Filter Panel */}
+      {/* Phone Card Specific Stats (only shown when Phone Card tab active) */}
+      {isPhoneCardTab && (
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+          <div className="bg-gradient-to-br from-cyan-500/5 to-cyan-600/10 border border-cyan-500/20 rounded-xl p-5">
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 rounded-lg bg-cyan-500/20 flex items-center justify-center">
+                <Layers className="w-5 h-5 text-cyan-400" />
+              </div>
+              <div>
+                <p className="text-2xl font-bold text-cyan-400">{phoneCardActiveSuites}</p>
+                <p className="text-xs text-cyan-500/70">Active Suites</p>
+              </div>
+            </div>
+            <p className="text-[11px] text-cyan-500/50 mt-2">From e_activephonecard — currently in-use calling card sessions</p>
+          </div>
+          <div className="bg-gradient-to-br from-cyan-500/5 to-cyan-600/10 border border-cyan-500/20 rounded-xl p-5">
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 rounded-lg bg-cyan-500/20 flex items-center justify-center">
+                <Smartphone className="w-5 h-5 text-cyan-400" />
+              </div>
+              <div>
+                <p className="text-2xl font-bold text-cyan-400">{totalPhones}</p>
+                <p className="text-xs text-cyan-500/70">Total Phones</p>
+              </div>
+            </div>
+            <p className="text-[11px] text-cyan-500/50 mt-2">Registered phone extensions across all phone card accounts</p>
+          </div>
+          <div className="bg-gradient-to-br from-cyan-500/5 to-cyan-600/10 border border-cyan-500/20 rounded-xl p-5">
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 rounded-lg bg-cyan-500/20 flex items-center justify-center">
+                <Wallet className="w-5 h-5 text-cyan-400" />
+              </div>
+              <div>
+                <p className={`text-2xl font-bold ${phoneCardBalance >= 0 ? "text-cyan-400" : "text-red-400"}`}>
+                  {formatMoney(phoneCardBalance)}
+                </p>
+                <p className="text-xs text-cyan-500/70">Phone Card Balance</p>
+              </div>
+            </div>
+            <p className="text-[11px] text-cyan-500/50 mt-2">Aggregated balance across {phoneCardCount} phone card accounts</p>
+          </div>
+        </div>
+      )}
+
+      {/* Search & Tab Navigation */}
       <div className="bg-surface-900 border border-surface-700/50 rounded-xl p-4">
+        {/* Account Type Tabs */}
+        <div className="flex flex-wrap gap-1.5 mb-4">
+          {[
+            { v: "", label: "All Accounts", icon: Users, color: "brand" },
+            { v: "0", label: "General", icon: Building2, color: "blue" },
+            { v: "3", label: "Phone Card", icon: CreditCard, color: "cyan" },
+            { v: "1", label: "Clearing", icon: Shield, color: "amber" },
+          ].map(tab => {
+            const active = typeTab === tab.v;
+            const colorMap: Record<string, { active: string; inactive: string; icon: string; iconInactive: string }> = {
+              brand: { active: "bg-brand-600/20 text-brand-400 border-brand-500/30", inactive: "bg-surface-800 border-surface-700/50 text-surface-400 hover:text-surface-50 hover:bg-surface-700/80", icon: "text-brand-400", iconInactive: "text-surface-500" },
+              blue: { active: "bg-blue-500/10 text-blue-400 border-blue-500/20", inactive: "bg-surface-800 border-surface-700/50 text-surface-400 hover:text-surface-50 hover:bg-surface-700/80", icon: "text-blue-400", iconInactive: "text-surface-500" },
+              cyan: { active: "bg-cyan-500/10 text-cyan-400 border-cyan-500/20", inactive: "bg-surface-800 border-surface-700/50 text-surface-400 hover:text-surface-50 hover:bg-surface-700/80", icon: "text-cyan-400", iconInactive: "text-surface-500" },
+              amber: { active: "bg-amber-500/10 text-amber-400 border-amber-500/20", inactive: "bg-surface-800 border-surface-700/50 text-surface-400 hover:text-surface-50 hover:bg-surface-700/80", icon: "text-amber-400", iconInactive: "text-surface-500" },
+            };
+            const c = colorMap[tab.color] || colorMap.brand;
+            return (
+              <button
+                key={tab.v}
+                onClick={() => handleTabChange(tab.v)}
+                className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium border transition-all duration-200 ${active ? c.active + " shadow-sm" : c.inactive}`}
+              >
+                <tab.icon className={`w-4 h-4 ${active ? c.icon : c.iconInactive}`} />
+                {tab.label}
+                {active && <span className="ml-1 w-1.5 h-1.5 rounded-full bg-current animate-pulse" />}
+              </button>
+            );
+          })}
+        </div>
+
         <div className="flex flex-wrap gap-3 items-center">
           <div className="relative flex-1 min-w-[200px]">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-surface-500" />
             <input type="text" placeholder="Account ID, Name, Gateway, Phone..." value={search} onChange={(e) => setSearch(e.target.value)}
               className="w-full pl-10 pr-4 py-2.5 bg-surface-800 border border-surface-700/50 rounded-lg text-surface-50 text-sm placeholder:text-surface-600 focus:outline-none focus:border-brand-500/50 transition-colors" />
-          </div>
-          <div className="relative">
-            <select value={typeFilter} onChange={(e) => setTypeFilter(e.target.value)}
-              className="appearance-none pl-4 pr-10 py-2.5 bg-surface-800 border border-surface-700/50 rounded-lg text-surface-50 text-sm focus:outline-none focus:border-brand-500/50 cursor-pointer">
-              <option value="">All Types</option><option value="0">General</option><option value="1">Clearing</option><option value="2">Agent</option><option value="3">Phone Card</option>
-            </select>
-            <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-surface-500 pointer-events-none" />
           </div>
           <button onClick={() => setShowFilters(!showFilters)}
             className={`flex items-center gap-2 px-4 py-2.5 rounded-lg text-sm font-medium transition-colors ${showFilters ? "bg-brand-600/20 text-brand-400 border border-brand-500/30" : "bg-surface-800 border border-surface-700/50 text-surface-400 hover:text-surface-50"}`}>
@@ -442,153 +538,107 @@ export default function GeneralAccountPage() {
       )}
 
       {/* Table */}
-      <div className="bg-surface-900 border border-surface-700/50 rounded-xl overflow-hidden">
-        <div className="overflow-x-auto">
-          <table className="w-full text-sm">
-            <thead>
-              <tr className="border-b border-surface-800">
-                <th className="w-10 px-3 py-3 text-center"><button onClick={toggleSelectAll} className="text-surface-500 hover:text-surface-300">{selectedIds.size > 0 && selectedIds.size === accounts.length ? <CheckSquare className="w-4 h-4 text-brand-400" /> : <Square className="w-4 h-4" />}</button></th>
-                <th className="text-left px-4 py-3 text-surface-400 font-medium text-xs uppercase tracking-wider">#</th>
-                <th className="text-left px-4 py-3 text-surface-400 font-medium text-xs uppercase tracking-wider">Account</th>
-                <th className="text-left px-4 py-3 text-surface-400 font-medium text-xs uppercase tracking-wider">Name</th>
-                <th className="text-left px-4 py-3 text-surface-400 font-medium text-xs uppercase tracking-wider">Type</th>
-                <th className="text-right px-4 py-3 text-surface-400 font-medium text-xs uppercase tracking-wider">Balance</th>
-                <th className="text-right px-4 py-3 text-surface-400 font-medium text-xs uppercase tracking-wider">Overdraft</th>
-                <th className="text-center px-4 py-3 text-surface-400 font-medium text-xs uppercase tracking-wider">Status</th>
-                <th className="text-left px-4 py-3 text-surface-400 font-medium text-xs uppercase tracking-wider">Billing Rate</th>
-                <th className="text-left px-4 py-3 text-surface-400 font-medium text-xs uppercase tracking-wider">Private Rate</th>
-                <th className="text-right px-4 py-3 text-surface-400 font-medium text-xs uppercase tracking-wider">Today Cons.</th>
-                <th className="text-center px-4 py-3 text-surface-400 font-medium text-xs uppercase tracking-wider">Gateways</th>
-                <th className="text-center px-4 py-3 text-surface-400 font-medium text-xs uppercase tracking-wider">Phones</th>
-                <th className="text-center px-4 py-3 text-surface-400 font-medium text-xs uppercase tracking-wider">Suites</th>
-                <th className="text-left px-4 py-3 text-surface-400 font-medium text-xs uppercase tracking-wider">Updated</th>
-                <th className="text-center px-4 py-3 text-surface-400 font-medium text-xs uppercase tracking-wider w-24">Actions</th>
-              </tr>
-            </thead>
-            <tbody>
-              {loading ? (
-                Array.from({ length: 5 }).map((_, i) => (
-                  <tr key={i} className="border-b border-surface-800/50">
-                    {Array.from({ length: 16 }).map((_, j) => (
-                      <td key={j} className="px-4 py-3"><div className="h-4 bg-surface-800 rounded animate-pulse" /></td>
-                    ))}
-                  </tr>
-                ))
-              ) : accounts.length === 0 ? (
-                <tr>
-                  <td colSpan={16} className="px-4 py-12 text-center text-surface-500">
-                    <Building2 className="w-10 h-10 mx-auto mb-2 text-surface-600" />
-                    <p>No accounts found</p>
-                  </td>
-                </tr>
-              ) : (
-                accounts.map((a) => (
-                  <tr key={a.id} className="border-b border-surface-800/50 hover:bg-surface-800/30 transition-colors">
-                    <td className="px-3 py-3 text-center"><button onClick={() => toggleSelect(a.id)} className="text-surface-500 hover:text-surface-300">{selectedIds.has(a.id) ? <CheckSquare className="w-4 h-4 text-brand-400" /> : <Square className="w-4 h-4" />}</button></td>
-                    <td className="px-4 py-3 text-surface-500 text-xs">{a.id}</td>
-                    <td className="px-4 py-3 text-surface-300 font-mono text-xs">{a.account}</td>
-                    <td className="px-4 py-3 text-surface-50 font-medium">
-                      <button onClick={() => router.push(`/dashboard/accounts/${a.id}`)} className="text-surface-50 hover:text-brand-400 transition-colors flex items-center gap-1 text-left group">
-                        {a.name}
-                        <ExternalLink className="w-3 h-3 text-surface-600 opacity-0 group-hover:opacity-100 transition-opacity" />
-                      </button>
-                    </td>
-                    <td className="px-4 py-3">
-                      <span className={`inline-flex px-2 py-0.5 rounded text-xs font-medium ${
-                        a.type === 1 ? "bg-amber-500/10 text-amber-400" :
-                        a.type === 2 ? "bg-violet-500/10 text-violet-400" :
-                        a.type === 3 ? "bg-cyan-500/10 text-cyan-400" :
-                        "bg-blue-500/10 text-blue-400"
-                      }`}>
-                        {TYPE_LABELS[a.type] || `Type ${a.type}`}
-                      </span>
-                    </td>
-                    <td className={`px-4 py-3 text-right font-mono text-sm ${a.money < 0 ? "text-red-400" : "text-emerald-400"}`}>
-                      {formatMoney(a.money)}
-                    </td>
-                    <td className="px-4 py-3 text-right text-surface-300 font-mono text-sm">
-                      ${a.limitmoney.toFixed(2)}
-                    </td>
-                    <td className="px-4 py-3 text-center">
-                      <button
-                        onClick={() => handleToggleStatus(a.id, a.status)}
-                        disabled={togglingIds.has(a.id) || a.status === 2}
-                        title={a.status === 2 ? "Locked — cannot toggle" : a.status === 1 ? "Click to deactivate" : "Click to activate"}
-                        className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium transition-all cursor-pointer ${
-                          a.status === 1 ? "bg-emerald-500/10 text-emerald-400 hover:bg-emerald-500/20" :
-                          a.status === 2 ? "bg-red-500/10 text-red-400 cursor-not-allowed" :
-                          "bg-surface-800 text-surface-500 hover:bg-surface-700"
-                        }`}
-                      >
-                        {togglingIds.has(a.id) ? (
-                          <Loader2 className="w-3 h-3 animate-spin" />
-                        ) : (
-                          <span className={`w-1.5 h-1.5 rounded-full ${
-                            a.status === 1 ? "bg-emerald-400" : a.status === 2 ? "bg-red-400" : "bg-surface-500"
-                          }`} />
-                        )}
-                        {STATUS_LABELS[a.status] || `Status ${a.status}`}
-                      </button>
-                    </td>
-                    <td className="px-4 py-3 text-surface-400 text-xs">
-                      {a.feerateGroupName || "—"}
-                    </td>
-                    <td className="px-4 py-3 text-surface-400 text-xs">
-                      {a.privateRateName || "—"}
-                    </td>
-                    <td className="px-4 py-3 text-right text-surface-300 font-mono text-xs">
-                      {a.todayConsumption > 0 ? <span className="text-amber-400">{formatMoney(a.todayConsumption)}</span> : <span className="text-surface-500">$0</span>}
-                    </td>
-                    <td className="px-4 py-3 text-center text-surface-300 text-xs">
-                      <button
-                        onClick={() => {
-                          const gwPath = a.type === 1 ? "/dashboard/operation/gateways/routing" : "/dashboard/operation/gateways/mapping";
-                          router.push(`${gwPath}?customer=${a.id}&name=${encodeURIComponent(a.name)}`);
-                        }}
-                        title={`Manage ${a.type === 1 ? "routing" : "mapping"} gateways for ${a.name}`}
-                        className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium transition-colors cursor-pointer ${
-                          a.gatewayCount > 0 ? "bg-violet-500/10 text-violet-400 hover:bg-violet-500/20" : "bg-surface-800 text-surface-500 hover:bg-surface-700 hover:text-surface-300"
-                        }`}
-                      >
-                        {a.gatewayCount}
-                      </button>
-                    </td>
-                    <td className="px-4 py-3 text-center text-surface-300 text-xs">
-                      <button
-                        onClick={() => router.push(`/dashboard/operation/phone?customer=${a.id}&name=${encodeURIComponent(a.name)}`)}
-                        title={`Manage phones for ${a.name}`}
-                        className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium transition-colors cursor-pointer ${
-                          a.phoneCount > 0 ? "bg-cyan-500/10 text-cyan-400 hover:bg-cyan-500/20" : "bg-surface-800 text-surface-500 hover:bg-surface-700 hover:text-surface-300"
-                        }`}
-                      >
-                        {a.phoneCount}
-                      </button>
-                    </td>
-                    <td className="px-4 py-3 text-center text-surface-300 text-xs">
-                      <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium ${a.suiteCount > 0 ? "bg-pink-500/10 text-pink-400" : "bg-surface-800 text-surface-500"}`}>
-                        {a.suiteCount}
-                      </span>
-                    </td>
-                    <td className="px-4 py-3 text-surface-400 text-xs">
-                      {formatTime(a.lastupdatetime)}
-                    </td>
-                    <td className="px-4 py-3 text-center">
-                      <div className="flex items-center justify-center gap-1">
-                        <button onClick={() => openEdit(a)} className="p-1.5 rounded hover:bg-surface-700 text-surface-400 hover:text-surface-50">
-                          <Edit2 className="w-3.5 h-3.5" />
-                        </button>
-                        <button onClick={() => handleDelete(a.id)} className="p-1.5 rounded hover:bg-red-500/10 text-surface-400 hover:text-red-400">
-                          <Trash2 className="w-3.5 h-3.5" />
-                        </button>
-                      </div>
-                    </td>
-                  </tr>
-                ))
-              )}
-            </tbody>
-          </table>
-        </div>
-      </div>
+      <DataTable
+        idKey="id"
+        selectedIds={selectedIds}
+        onSelectToggle={toggleSelect}
+        onSelectAllToggle={toggleSelectAll}
+        columns={[
+          { key: "id", label: "#", render: (a: Account) => <span className="text-surface-500 text-xs">{a.id}</span> },
+          { key: "account", label: "Account", render: (a: Account) => <span className="text-surface-300 font-mono text-xs">{a.account}</span> },
+          { key: "name", label: "Name", render: (a: Account) => (
+            <button onClick={() => router.push(`/dashboard/accounts/${a.id}`)} className="text-surface-50 hover:text-brand-400 transition-colors flex items-center gap-1 text-left group">
+              {a.name}
+              <ExternalLink className="w-3 h-3 text-surface-600 opacity-0 group-hover:opacity-100 transition-opacity" />
+            </button>
+          )},
+          { key: "type", label: "Type", render: (a: Account) => {
+            const isPhoneCard = a.type === 3;
+            const isClearing = a.type === 1;
+            return (
+              <span className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-medium ${
+                isPhoneCard ? "bg-cyan-500/15 text-cyan-300 border border-cyan-500/20" :
+                isClearing ? "bg-amber-500/15 text-amber-300 border border-amber-500/20" :
+                "bg-blue-500/10 text-blue-400 border border-blue-500/20"
+              }`}>
+                {isPhoneCard && <CreditCard className="w-3 h-3" />}
+                {TYPE_LABELS[a.type]}
+              </span>
+            );
+          } },
+          { key: "money", label: "Balance", textAlign: "right" as const, render: moneyRender((a: Account) => a.money) },
+          { key: "limitmoney", label: "Overdraft", textAlign: "right" as const, render: (a: Account) => (
+            <span className="text-surface-300 font-mono text-sm">${a.limitmoney.toFixed(2)}</span>
+          )},
+          { key: "status", label: "Status", textAlign: "center" as const, render: statusToggleRender({
+            getId: (a) => a.id, getStatus: (a) => a.status, onToggle: handleToggleStatus, togglingIds,
+            activeValue: 1, lockedValue: 2, labels: STATUS_LABELS,
+          }) },
+          { key: "feerateGroupName", label: "Billing Rate", render: (a: Account) => (
+            <span className="text-surface-400 text-xs">{a.feerateGroupName || "—"}</span>
+          )},
+          { key: "privateRateName", label: "Private Rate", render: (a: Account) => (
+            <span className="text-surface-400 text-xs">{a.privateRateName || "—"}</span>
+          )},
+          { key: "todayConsumption", label: "Today Cons.", textAlign: "right" as const, render: (a: Account) => (
+            a.todayConsumption > 0 ? <span className="text-amber-400 font-mono text-xs">{formatMoney(a.todayConsumption)}</span> : <span className="text-surface-500">$0</span>
+          )},
+          { key: "gatewayCount", label: "Gateways", textAlign: "center" as const, render: (a: Account) => (
+            <button
+              onClick={() => {
+                const gwPath = a.type === 1 ? "/dashboard/operation/gateways/routing" : "/dashboard/operation/gateways/mapping";
+                router.push(`${gwPath}?customer=${a.id}&name=${encodeURIComponent(a.name)}`);
+              }}
+              title={`Manage ${a.type === 1 ? "routing" : "mapping"} gateways for ${a.name}`}
+              className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium transition-colors cursor-pointer ${
+                a.gatewayCount > 0 ? "bg-violet-500/10 text-violet-400 hover:bg-violet-500/20" : "bg-surface-800 text-surface-500 hover:bg-surface-700 hover:text-surface-300"
+              }`}
+            >
+              {a.gatewayCount}
+            </button>
+          )},
+          { key: "phoneCount", label: "Phones", textAlign: "center" as const, render: (a: Account) => (
+            <button
+              onClick={() => router.push(`/dashboard/operation/phone?customer=${a.id}&name=${encodeURIComponent(a.name)}`)}
+              title={`Manage phones for ${a.name}`}
+              className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium transition-colors cursor-pointer ${
+                a.phoneCount > 0 ? "bg-cyan-500/10 text-cyan-400 hover:bg-cyan-500/20" : "bg-surface-800 text-surface-500 hover:bg-surface-700 hover:text-surface-300"
+              }`}
+            >
+              {a.phoneCount}
+            </button>
+          )},
+          { key: "email", label: "Email", render: (a: Account) => (
+            <span className="text-surface-400 text-xs truncate max-w-[160px] block" title={a.email}>{a.email || "—"}</span>
+          )},
+          { key: "suiteCount", label: "Suites", textAlign: "center" as const, render: (a: Account) => (
+            a.suiteCount > 0 ? (
+              <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-bold transition-all ${
+                a.type === 3
+                  ? "bg-cyan-500/20 text-cyan-300 border border-cyan-500/30 shadow-sm shadow-cyan-500/10"
+                  : "bg-pink-500/10 text-pink-400"
+              }`}>
+                {a.type === 3 && <span className="w-1.5 h-1.5 rounded-full bg-cyan-400 animate-pulse" />}
+                {a.suiteCount}
+              </span>
+            ) : (
+              <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-medium bg-surface-800 text-surface-600">
+                {a.suiteCount}
+              </span>
+            )
+          )},
+          { key: "lastupdatetime", label: "Updated", render: (a: Account) => (
+            <span className="text-surface-400 text-xs">{formatTime(a.lastupdatetime)}</span>
+          )},
+          { key: "actions", label: "Actions", textAlign: "center" as const, width: "6rem", render: actionsRender(openEdit, (a) => handleDelete(a.id)) },
+        ]}
+        data={accounts}
+        loading={loading}
+        emptyIcon={<Building2 className="w-10 h-10 text-surface-600" />}
+        emptyMessage="No accounts found"
+        emptySubtitle="Try adjusting the search or filters above"
+        pageSize={20}
+      />
 
       {/* Add/Edit Modal */}
       {showModal && (
@@ -622,12 +672,11 @@ export default function GeneralAccountPage() {
 
               {/* Drag-and-drop selectors */}
               <DragSelect
-                label="Type"
+                label="Account Type"
                 options={[
                   { value: 0, label: "General" },
-                  { value: 1, label: "Clearing" },
-                  { value: 2, label: "Agent" },
                   { value: 3, label: "Phone Card" },
+                  { value: 1, label: "Clearing" },
                 ]}
                 value={form.type}
                 onChange={v => setForm({ ...form, type: Number(v) })}
@@ -646,13 +695,25 @@ export default function GeneralAccountPage() {
 
               {rateGroups.length > 0 && (
                 <DragSelect
-                  label="Rate Group"
+                  label="Billing Rate Group"
                   options={[
                     { value: 0, label: "None" },
                     ...rateGroups.map(g => ({ value: g.id, label: g.name })),
                   ]}
                   value={form.feerateGroupId}
                   onChange={v => setForm({ ...form, feerateGroupId: Number(v) })}
+                />
+              )}
+
+              {rateGroups.length > 0 && (
+                <DragSelect
+                  label="Private Rate Group"
+                  options={[
+                    { value: 0, label: "None" },
+                    ...rateGroups.map(g => ({ value: g.id, label: g.name })),
+                  ]}
+                  value={form.feerateGroupPrivateId}
+                  onChange={v => setForm({ ...form, feerateGroupPrivateId: Number(v) })}
                 />
               )}
 

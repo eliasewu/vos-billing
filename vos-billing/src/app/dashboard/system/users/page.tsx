@@ -1,7 +1,10 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { Users, RefreshCw, Shield, Plus, Edit2, Trash2, X, Loader2, Search, ChevronDown } from "lucide-react";
+import { Users, RefreshCw, Shield, Plus, Edit2, Trash2, X, Loader2, ChevronDown } from "lucide-react";
+import DataTable from "@/components/DataTable";
+import { actionsRender, statusToggleRender, badgeRender } from "@/components/DataTableHelpers";
+import { safeErrorString } from "@/lib/utils";
 
 interface VUser {
   id: number; loginName: string; userName: string; level: number;
@@ -17,7 +20,6 @@ export default function UserManagementPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
-  const [search, setSearch] = useState("");
   const [levelFilter, setLevelFilter] = useState("");
   const [togglingIds, setTogglingIds] = useState<Set<number>>(new Set());
   const [showModal, setShowModal] = useState(false);
@@ -33,7 +35,7 @@ export default function UserManagementPage() {
     try {
       const r = await fetch("/api/vos/users");
       const d = await r.json();
-      if (d.error) setError(d.error);
+      if (d.error) setError(safeErrorString(d.error));
       else setUsers(d.users || []);
     } catch { setError("Failed to load users"); }
     finally { setLoading(false); }
@@ -48,7 +50,7 @@ export default function UserManagementPage() {
       const body = editingUser ? { id: editingUser.id, ...form } : form;
       const res = await fetch("/api/vos/users", { method, headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
       const data = await res.json();
-      if (data.error) { setError(data.error); return; }
+      if (data.error) { setError(safeErrorString(data.error)); return; }
       setShowModal(false); setEditingUser(null);
       setSuccess(editingUser ? "User updated" : "User created");
       fetchUsers();
@@ -66,7 +68,7 @@ export default function UserManagementPage() {
         body: JSON.stringify({ id, lockType: newLockType }),
       });
       const data = await res.json();
-      if (data.error) setError(data.error);
+      if (data.error) setError(safeErrorString(data.error));
       else setUsers(prev => prev.map(u => u.id === id ? { ...u, lockType: newLockType } : u));
     } catch { setError("Failed to toggle status"); }
     finally {
@@ -79,7 +81,7 @@ export default function UserManagementPage() {
     try {
       const res = await fetch(`/api/vos/users?id=${id}`, { method: "DELETE" });
       const data = await res.json();
-      if (data.error) setError(data.error);
+      if (data.error) setError(safeErrorString(data.error));
       else { setSuccess("User deleted"); fetchUsers(); }
     } catch { setError("Failed to delete"); }
   };
@@ -102,13 +104,7 @@ export default function UserManagementPage() {
 
   const fmtTime = (t: number) => t ? new Date(t * 1000).toLocaleDateString("en-US", { year: "numeric", month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" }) : "Never";
 
-  const filtered = users.filter(u => {
-    const s = search.toLowerCase();
-    const matchSearch = !s || u.loginName.toLowerCase().includes(s) || (u.userName || "").toLowerCase().includes(s);
-    const matchLevel = !levelFilter || u.level === parseInt(levelFilter);
-    return matchSearch && matchLevel;
-  });
-
+  const filteredByLevel = levelFilter ? users.filter(u => u.level === parseInt(levelFilter)) : users;
   const active = users.filter(u => u.lockType === 0).length;
   const locked = users.filter(u => u.lockType === 1).length;
 
@@ -159,13 +155,8 @@ export default function UserManagementPage() {
       {error && <div className="p-4 rounded-xl bg-red-500/10 border border-red-500/20 text-red-400 text-sm flex items-center gap-2"><button onClick={() => setError("")} className="p-0.5 hover:text-red-300"><X className="w-3.5 h-3.5" /></button>{error}</div>}
       {success && <div className="p-4 rounded-xl bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 text-sm flex items-center gap-2"><button onClick={() => setSuccess("")} className="p-0.5 hover:text-emerald-300"><X className="w-3.5 h-3.5" /></button>{success}</div>}
 
-      {/* Search & Filter */}
-      <div className="flex flex-wrap gap-3">
-        <div className="relative flex-1 min-w-[200px]">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-surface-500" />
-          <input type="text" placeholder="Search by login or display name..." value={search} onChange={e => setSearch(e.target.value)}
-            className="w-full pl-10 pr-4 py-2.5 bg-surface-900 border border-surface-700/50 rounded-lg text-surface-50 text-sm placeholder:text-surface-600 focus:outline-none focus:border-brand-500/50" />
-        </div>
+      {/* Level Filter */}
+      <div className="flex items-center gap-3">
         <div className="relative">
           <select value={levelFilter} onChange={e => setLevelFilter(e.target.value)}
             className="appearance-none pl-4 pr-10 py-2.5 bg-surface-900 border border-surface-700/50 rounded-lg text-surface-50 text-sm focus:outline-none focus:border-brand-500/50 cursor-pointer">
@@ -177,75 +168,35 @@ export default function UserManagementPage() {
           </select>
           <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-surface-500 pointer-events-none" />
         </div>
+        {levelFilter && (
+          <button onClick={() => setLevelFilter("")} className="text-xs text-surface-400 hover:text-surface-50">Clear filter</button>
+        )}
       </div>
 
-      {/* Table */}
-      <div className="bg-surface-900 border border-surface-700/50 rounded-xl overflow-hidden">
-        <div className="overflow-x-auto">
-          <table className="w-full text-sm">
-            <thead>
-              <tr className="border-b border-surface-800">
-                <th className="text-left px-4 py-3 text-surface-400 font-medium text-xs uppercase tracking-wider">#</th>
-                <th className="text-left px-4 py-3 text-surface-400 font-medium text-xs uppercase tracking-wider">Login</th>
-                <th className="text-left px-4 py-3 text-surface-400 font-medium text-xs uppercase tracking-wider">Name</th>
-                <th className="text-center px-4 py-3 text-surface-400 font-medium text-xs uppercase tracking-wider">Level</th>
-                <th className="text-center px-4 py-3 text-surface-400 font-medium text-xs uppercase tracking-wider">Status</th>
-                <th className="text-left px-4 py-3 text-surface-400 font-medium text-xs uppercase tracking-wider">Last Login</th>
-                <th className="text-left px-4 py-3 text-surface-400 font-medium text-xs uppercase tracking-wider">Expires</th>
-                <th className="text-center px-4 py-3 text-surface-400 font-medium text-xs uppercase tracking-wider">MACs</th>
-                <th className="text-center px-4 py-3 text-surface-400 font-medium text-xs uppercase tracking-wider w-24">Actions</th>
-              </tr>
-            </thead>
-            <tbody>
-              {loading ? (
-                Array.from({ length: 5 }).map((_, i) => (
-                  <tr key={i} className="border-b border-surface-800/50">
-                    {Array.from({ length: 9 }).map((_, j) => <td key={j} className="px-4 py-3"><div className="h-4 bg-surface-800 rounded animate-pulse" /></td>)}
-                  </tr>
-                ))
-              ) : filtered.length === 0 ? (
-                <tr><td colSpan={9} className="px-4 py-12 text-center text-surface-500">
-                  <Users className="w-10 h-10 mx-auto mb-2 text-surface-600" /><p>No users found</p></td></tr>
-              ) : (
-                filtered.map(u => (
-                  <tr key={u.id} className="border-b border-surface-800/50 hover:bg-surface-800/30 transition-colors">
-                    <td className="px-4 py-3 text-surface-500 text-xs">{u.id}</td>
-                    <td className="px-4 py-3 text-surface-300 font-mono text-xs">{u.loginName}</td>
-                    <td className="px-4 py-3 text-surface-50 font-medium">{u.userName || "—"}</td>
-                    <td className="px-4 py-3 text-center">
-                      <span className={`inline-flex px-2 py-0.5 rounded text-xs font-medium ${
-                        u.level >= 2 ? "bg-amber-500/10 text-amber-400" : u.level === 1 ? "bg-blue-500/10 text-blue-400" : "bg-surface-800 text-surface-400"
-                      }`}>{LEVELS[u.level] || `L${u.level}`}</span>
-                    </td>
-                    <td className="px-4 py-3 text-center">
-                      <button
-                        onClick={() => handleToggleStatus(u.id, u.lockType)}
-                        disabled={togglingIds.has(u.id)}
-                        title={u.lockType === 0 ? "Click to lock" : "Click to unlock"}
-                        className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium transition-all cursor-pointer ${
-                          u.lockType === 0 ? "bg-emerald-500/10 text-emerald-400 hover:bg-emerald-500/20" : "bg-red-500/10 text-red-400 hover:bg-red-500/20"
-                        }`}
-                      >
-                        {togglingIds.has(u.id) ? <Loader2 className="w-3 h-3 animate-spin" /> : null}
-                        {u.lockType === 0 ? "Active" : "Locked"}
-                      </button>
-                    </td>
-                    <td className="px-4 py-3 text-surface-400 text-xs">{fmtTime(u.lastLogin)}</td>
-                    <td className="px-4 py-3 text-surface-400 text-xs">{u.expireTime ? fmtTime(u.expireTime) : "Never"}</td>
-                    <td className="px-4 py-3 text-center text-surface-500 text-xs">{u.limitMacs || "—"}</td>
-                    <td className="px-4 py-3 text-center">
-                      <div className="flex items-center justify-center gap-1">
-                        <button onClick={() => openEdit(u)} className="p-1.5 rounded hover:bg-surface-700 text-surface-400 hover:text-surface-50"><Edit2 className="w-3.5 h-3.5" /></button>
-                        <button onClick={() => handleDelete(u.id)} className="p-1.5 rounded hover:bg-red-500/10 text-surface-400 hover:text-red-400"><Trash2 className="w-3.5 h-3.5" /></button>
-                      </div>
-                    </td>
-                  </tr>
-                ))
-              )}
-            </tbody>
-          </table>
-        </div>
-      </div>
+      <DataTable
+        columns={[
+          { key: "id", label: "#", render: (u: VUser) => <span className="text-surface-500 text-xs">{u.id}</span> },
+          { key: "loginName", label: "Login", render: (u: VUser) => <span className="text-surface-300 font-mono text-xs">{u.loginName}</span> },
+          { key: "userName", label: "Name", render: (u: VUser) => <span className="text-surface-50 font-medium">{u.userName || "—"}</span> },
+          { key: "level", label: "Level", textAlign: "center" as const, render: badgeRender((u) => u.level, LEVELS, { 0: "bg-surface-800 text-surface-400", 1: "bg-blue-500/10 text-blue-400", 2: "bg-amber-500/10 text-amber-400", 3: "bg-amber-500/10 text-amber-400" }) },
+          { key: "lockType", label: "Status", textAlign: "center" as const, render: statusToggleRender({
+            getId: (u) => u.id, getStatus: (u) => u.lockType, onToggle: handleToggleStatus, togglingIds,
+            labels: { 0: "Active", 1: "Locked" },
+          }) },
+          { key: "lastLogin", label: "Last Login", render: (u: VUser) => <span className="text-surface-400 text-xs">{fmtTime(u.lastLogin)}</span> },
+          { key: "expireTime", label: "Expires", render: (u: VUser) => <span className="text-surface-400 text-xs">{u.expireTime ? fmtTime(u.expireTime) : "Never"}</span> },
+          { key: "limitMacs", label: "MACs", textAlign: "center" as const, render: (u: VUser) => (
+            <span className="text-surface-500 text-xs">{u.limitMacs || "—"}</span>
+          )},
+          { key: "actions", label: "Actions", textAlign: "center" as const, width: "6rem", render: actionsRender(openEdit, (u) => handleDelete(u.id)) },
+        ]}
+        data={filteredByLevel}
+        searchKey="loginName"
+        loading={loading}
+        emptyIcon={<Users className="w-10 h-10 text-surface-600" />}
+        emptyMessage="No users found"
+        pageSize={15}
+      />
 
       {/* Add/Edit Modal */}
       {showModal && (

@@ -40,3 +40,4 @@ coverage/
 
 # misc
 .turbo
+.jwt_secret

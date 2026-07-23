@@ -181,6 +181,10 @@ export async function PUT(
       fields.push("feerategroup_id = ?");
       values.push(Number(body.feerateGroupId));
     }
+    if (body.feerateGroupPrivateId !== undefined) {
+      fields.push("feerategroupprivate_id = ?");
+      values.push(Number(body.feerateGroupPrivateId));
+    }
     if (body.email !== undefined) {
       fields.push("alarmemail = ?");
       values.push(String(body.email));

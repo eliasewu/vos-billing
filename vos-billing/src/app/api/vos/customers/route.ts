@@ -46,6 +46,8 @@ export async function GET(request: NextRequest) {
         contact_email: (row.alarmemail as string) || "",
         create_time: "",
         remark: (row.memo as string) || "",
+        feerategroup_id: Number(row.feerategroup_id) || 0,
+        feerategroupprivate_id: Number(row.feerategroupprivate_id) || 0,
       };
     });
 

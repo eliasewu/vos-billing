@@ -2,14 +2,41 @@
 
 import { useState, useEffect } from "react";
 import { useSearchParams, useRouter } from "next/navigation";
-import { ArrowLeftRight, Search, RefreshCw, Server, Shield, Wifi, Plus, Edit2, Trash2, X, ArrowLeft } from "lucide-react";
+import { ArrowLeftRight, Search, RefreshCw, Plus, Edit2, Trash2, X, ArrowLeft } from "lucide-react";
+import DataTable from "@/components/DataTable";
 
 interface RoutingGateway {
-  id: number; name: string; prefix: string; prefixStyle: number; lockType: number; callLevel: number; capacity: number; priority: number; ipType: number; encrypt: number; protocol: string; remoteIps: string; rtpForwardType: number; signalPort: number; signalPortLocal: number; gatewayGroups: string; memo: string; mbxId: number; clearingCustomerId: number; rewriteInCallee: string | null; rewriteInCaller: string | null; sipCodecs: string | null; timeoutInvite: number; timeoutRinging: number; settingCapacity: number;
+  id: number;
+  name: string;
+  prefix: string;
+  prefixStyle: number;
+  password: string;
+  customerPassword: string;
+  lockType: number;
+  callLevel: number;
+  capacity: number;
+  priority: number;
+  protocol: string;
+  remoteIps: string;
+  gatewayGroups: string;
+  memo: string;
+  clearingCustomerId: number;
+  clearingName: string;
+  clearingAccount: string;
+  clearingBalance: number;
+  clearingLimit: number;
+  rewriteInCallee: string | null;
+  rewriteInCaller: string | null;
+  callerBlacklistPolicy: number;
+  calleeBlacklistPolicy: number;
+  callerPrefixesAllow: number;
+  calleePrefixesAllow: number;
+  mappingGatewayNames: string;
 }
 
-const STATUS_LABELS: Record<number, string> = { 0: "Active", 1: "Locked" };
-const PROTOCOL_LABELS: Record<string, string> = { "0": "SIP", "1": "H.323", "2": "IAX2" };
+const PREFIX_MODE_LABELS: Record<number, string> = { 0: "Prefix", 1: "Prefix+", 2: "E.164" };
+const LOCK_LABELS: Record<number, string> = { 0: "No Lock", 1: "Bar All Call" };
+const BL_LABELS: Record<number, string> = { 0: "White", 1: "Black", 2: "None" };
 
 export default function RoutingGatewayPage() {
   const searchParams = useSearchParams();
@@ -24,7 +51,9 @@ export default function RoutingGatewayPage() {
   const [showModal, setShowModal] = useState(false);
   const [editingGw, setEditingGw] = useState<RoutingGateway | null>(null);
   const [saving, setSaving] = useState(false);
-  const [form, setForm] = useState({ name:"", prefix:"", protocol:"0", lockType:0, capacity:0, priority:0, remoteIps:"", signalPort:5060, gatewayGroups:"", memo:"", encrypt:0, callLevel:0, clearingCustomerId: preselectedCustomerId });
+  const [deletingIds, setDeletingIds] = useState<Set<number>>(new Set());
+  const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
+  const [form, setForm] = useState({ name:"", prefix:"", password:"", customerPassword:"", protocol:"0", lockType:0, capacity:0, priority:0, remoteIps:"", gatewayGroups:"", memo:"", clearingCustomerId: preselectedCustomerId });
 
   const fetchGateways = async () => {
     setLoading(true); setError("");
@@ -34,7 +63,7 @@ export default function RoutingGatewayPage() {
       const res = await fetch(`/api/vos/gateways/routing?${params}`);
       const data = await res.json();
       if (data.error) setError(data.error);
-      else setGateways(data.gateways || []);
+      else { setGateways(data.gateways || []); setSelectedIds(new Set()); }
     } catch { setError("Failed to load routing gateways"); }
     finally { setLoading(false); }
   };
@@ -53,32 +82,63 @@ export default function RoutingGatewayPage() {
 
   const handleDelete = async (id: number) => {
     if (!confirm("Delete this routing gateway?")) return;
-    try { await fetch(`/api/vos/gateways/routing/${id}`, { method: "DELETE" }); fetchGateways(); } catch {}
+    setDeletingIds(prev => new Set(prev).add(id));
+    try { await fetch(`/api/vos/gateways/routing/${id}`, { method: "DELETE" }); fetchGateways(); }
+    catch { setError("Failed to delete"); }
+    finally { setDeletingIds(prev => { const n = new Set(prev); n.delete(id); return n; }); }
   };
 
   const openEdit = (g: RoutingGateway) => {
     setEditingGw(g);
-    setForm({ name:g.name, prefix:g.prefix||"", protocol:g.protocol, lockType:g.lockType, capacity:g.capacity, priority:g.priority, remoteIps:g.remoteIps||"", signalPort:g.signalPort||5060, gatewayGroups:g.gatewayGroups||"", memo:g.memo||"", encrypt:g.encrypt, callLevel:g.callLevel, clearingCustomerId:g.clearingCustomerId });
+    setForm({ name:g.name, prefix:g.prefix||"", password:g.password||"", customerPassword:g.customerPassword||"", protocol:"0", lockType:g.lockType, capacity:g.capacity, priority:g.priority, remoteIps:g.remoteIps||"", gatewayGroups:g.gatewayGroups||"", memo:g.memo||"", clearingCustomerId:g.clearingCustomerId });
     setShowModal(true);
   };
 
   const openAdd = () => {
     setEditingGw(null);
-    setForm({ name:"", prefix:"", protocol:"0", lockType:0, capacity:0, priority:0, remoteIps:"", signalPort:5060, gatewayGroups:"", memo:"", encrypt:0, callLevel:0, clearingCustomerId: preselectedCustomerId });
+    setForm({ name:"", prefix:"", password:"", customerPassword:"", protocol:"0", lockType:0, capacity:0, priority:0, remoteIps:"", gatewayGroups:"", memo:"", clearingCustomerId: preselectedCustomerId });
     setShowModal(true);
   };
 
   useEffect(() => {
     if (preselectedCustomerId > 0) {
       setEditingGw(null);
-      setForm({ name:"", prefix:"", protocol:"0", lockType:0, capacity:0, priority:0, remoteIps:"", signalPort:5060, gatewayGroups:"", memo:"", encrypt:0, callLevel:0, clearingCustomerId: preselectedCustomerId });
+      setForm({ name:"", prefix:"", password:"", customerPassword:"", protocol:"0", lockType:0, capacity:0, priority:0, remoteIps:"", gatewayGroups:"", memo:"", clearingCustomerId: preselectedCustomerId });
       setShowModal(true);
       router.replace("/dashboard/operation/gateways/routing");
     }
   }, []);
 
+  const toggleSelect = (id: number) => {
+    setSelectedIds(prev => { const n = new Set(prev); n.has(id) ? n.delete(id) : n.add(id); return n; });
+  };
+
+  const toggleSelectAll = () => {
+    if (selectedIds.size === filtered.length) setSelectedIds(new Set());
+    else setSelectedIds(new Set(filtered.map(g => g.id)));
+  };
+
+  const handleBulkDelete = async () => {
+    if (selectedIds.size === 0) return;
+    if (!confirm(`Delete ${selectedIds.size} selected gateways?`)) return;
+    setError("");
+    let ok = 0;
+    for (const id of selectedIds) {
+      try { await fetch(`/api/vos/gateways/routing/${id}`, { method: "DELETE" }); ok++; } catch {}
+    }
+    setSelectedIds(new Set());
+    fetchGateways();
+  };
+
+  const filtered = gateways.filter(g =>
+    (g.name||"").toLowerCase().includes(search.toLowerCase()) ||
+    (g.prefix||"").includes(search) ||
+    (g.remoteIps||"").includes(search)
+  );
+
   return (
     <div className="p-6 space-y-6">
+      {/* Header */}
       <div className="flex items-center justify-between">
         <div>
           <div className="flex items-center gap-3">
@@ -103,45 +163,111 @@ export default function RoutingGatewayPage() {
         </div>
       </div>
 
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-        <div className="bg-surface-900 border border-surface-700/50 rounded-xl p-5"><div className="flex items-center gap-3"><div className="w-10 h-10 rounded-lg bg-brand-500/10 flex items-center justify-center"><Server className="w-5 h-5 text-brand-400" /></div><div><p className="text-2xl font-bold text-surface-50">{gateways.length}</p><p className="text-xs text-surface-400">Total Gateways</p></div></div></div>
-        <div className="bg-surface-900 border border-surface-700/50 rounded-xl p-5"><div className="flex items-center gap-3"><div className="w-10 h-10 rounded-lg bg-emerald-500/10 flex items-center justify-center"><Shield className="w-5 h-5 text-emerald-400" /></div><div><p className="text-2xl font-bold text-surface-50">{gateways.filter((g) => g.lockType === 0).length}</p><p className="text-xs text-surface-400">Active</p></div></div></div>
-        <div className="bg-surface-900 border border-surface-700/50 rounded-xl p-5"><div className="flex items-center gap-3"><div className="w-10 h-10 rounded-lg bg-violet-500/10 flex items-center justify-center"><Wifi className="w-5 h-5 text-violet-400" /></div><div><p className="text-2xl font-bold text-surface-50">{gateways.filter((g) => g.remoteIps).length}</p><p className="text-xs text-surface-400">Has Remote IP</p></div></div></div>
+      {/* Stats */}
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+        <div className="bg-surface-900 border border-surface-700/50 rounded-xl p-4">
+          <p className="text-xs text-surface-500 mb-1">Total</p>
+          <p className="text-2xl font-bold text-surface-50">{gateways.length}</p>
+        </div>
+        <div className="bg-surface-900 border border-surface-700/50 rounded-xl p-4">
+          <p className="text-xs text-surface-500 mb-1">Active</p>
+          <p className="text-2xl font-bold text-emerald-400">{gateways.filter(g => g.lockType === 0).length}</p>
+        </div>
+        <div className="bg-surface-900 border border-surface-700/50 rounded-xl p-4">
+          <p className="text-xs text-surface-500 mb-1">Bar All Call</p>
+          <p className="text-2xl font-bold text-red-400">{gateways.filter(g => g.lockType === 1).length}</p>
+        </div>
+        <div className="bg-surface-900 border border-surface-700/50 rounded-xl p-4">
+          <p className="text-xs text-surface-500 mb-1">Has IP</p>
+          <p className="text-2xl font-bold text-violet-400">{gateways.filter(g => g.remoteIps).length}</p>
+        </div>
       </div>
 
-      <div className="relative max-w-md"><Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-surface-500" /><input type="text" placeholder="Search by name, prefix, or IP..." value={search} onChange={(e) => setSearch(e.target.value)} className="w-full pl-10 pr-4 py-2.5 bg-surface-900 border border-surface-700/50 rounded-lg text-surface-50 text-sm placeholder:text-surface-600 focus:outline-none focus:border-brand-500/50" /></div>
+      {/* Search + Bulk Actions */}
+      <div className="flex items-center gap-3">
+        <div className="relative flex-1 max-w-md">
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-surface-500" />
+          <input type="text" placeholder="Search by name, prefix, or IP..." value={search} onChange={e => setSearch(e.target.value)}
+            className="w-full pl-10 pr-4 py-2.5 bg-surface-900 border border-surface-700/50 rounded-lg text-surface-50 text-sm placeholder:text-surface-600 focus:outline-none focus:border-brand-500/50" />
+        </div>
+        {selectedIds.size > 0 && (
+          <button onClick={handleBulkDelete} className="flex items-center gap-1.5 px-4 py-2 rounded-lg bg-red-600 hover:bg-red-500 text-white text-sm font-medium transition-colors">
+            <Trash2 className="w-4 h-4"/>Delete {selectedIds.size}
+          </button>
+        )}
+      </div>
 
       {error && <div className="p-4 rounded-xl bg-red-500/10 border border-red-500/20 text-red-400 text-sm">{error}</div>}
 
-      {loading ? (
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">{Array.from({ length: 3 }).map((_, i) => (<div key={i} className="bg-surface-900 border border-surface-700/50 rounded-xl p-6"><div className="h-6 bg-surface-800 rounded w-32 mb-3 animate-pulse" /><div className="h-4 bg-surface-800 rounded w-48 mb-2 animate-pulse" /><div className="h-4 bg-surface-800 rounded w-24 animate-pulse" /></div>))}</div>
-      ) : gateways.length === 0 ? (
-        <div className="bg-surface-900 border border-surface-700/50 rounded-xl p-12 text-center text-surface-500"><ArrowLeftRight className="w-12 h-12 mx-auto mb-3 text-surface-600" /><p className="text-lg font-medium">No routing gateways found</p></div>
-      ) : (
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-          {gateways.map((g) => (
-            <div key={g.id} className="bg-surface-900 border border-surface-700/50 rounded-xl overflow-hidden hover:border-surface-600/50 transition-colors relative group">
-              <div className="px-5 py-4 border-b border-surface-800 flex items-center justify-between">
-                <div className="flex items-center gap-3"><div className={`w-10 h-10 rounded-lg flex items-center justify-center ${g.lockType === 0 ? "bg-emerald-500/10" : "bg-red-500/10"}`}><ArrowLeftRight className={`w-5 h-5 ${g.lockType === 0 ? "text-emerald-400" : "text-red-400"}`} /></div><div><h3 className="text-base font-semibold text-surface-50">{g.name}</h3><p className="text-xs text-surface-500">ID: {g.id} | Priority: {g.priority}</p></div></div>
-                <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium ${g.lockType === 0 ? "bg-emerald-500/10 text-emerald-400" : "bg-red-500/10 text-red-400"}`}><span className={`w-1.5 h-1.5 rounded-full ${g.lockType === 0 ? "bg-emerald-400" : "bg-red-400"}`} />{STATUS_LABELS[g.lockType] || "Unknown"}</span>
-              </div>
-              <div className="px-5 py-4 grid grid-cols-2 gap-x-4 gap-y-2 text-sm">
-                <div><span className="text-surface-500 text-xs">Prefix</span><p className="text-surface-50 font-mono">{g.prefix || "—"}</p></div>
-                <div><span className="text-surface-500 text-xs">Protocol</span><p className="text-surface-50">{PROTOCOL_LABELS[g.protocol] || `Type ${g.protocol}`}</p></div>
-                <div><span className="text-surface-500 text-xs">Remote IPs</span><p className="text-surface-50 font-mono text-xs truncate" title={g.remoteIps}>{g.remoteIps || "—"}</p></div>
-                <div><span className="text-surface-500 text-xs">Signal Port</span><p className="text-surface-50 font-mono">{g.signalPort || "—"}</p></div>
-                <div><span className="text-surface-500 text-xs">Capacity</span><p className="text-surface-50">{g.capacity || "—"} calls</p></div>
-                <div><span className="text-surface-500 text-xs">Gateway Group</span><p className="text-surface-50">{g.gatewayGroups || "—"}</p></div>
-                <div className="col-span-2"><span className="text-surface-500 text-xs">Memo</span><p className="text-surface-50 text-xs">{g.memo || "—"}</p></div>
-              </div>
-              <div className="absolute top-3 right-3 flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                <button onClick={() => openEdit(g)} className="p-1 rounded hover:bg-surface-700 text-surface-400 hover:text-surface-50"><Edit2 className="w-3.5 h-3.5"/></button>
-                <button onClick={() => handleDelete(g.id)} className="p-1 rounded hover:bg-red-500/10 text-surface-400 hover:text-red-400"><Trash2 className="w-3.5 h-3.5"/></button>
-              </div>
+      {/* Full Table */}
+      <DataTable
+        idKey="id"
+        selectedIds={selectedIds}
+        onSelectToggle={toggleSelect}
+        onSelectAllToggle={toggleSelectAll}
+        columns={[
+          { key: "name", label: "Gw Name", render: (g: RoutingGateway) => <span className="text-surface-50 font-medium whitespace-nowrap max-w-[120px] truncate block" title={g.name}>{g.name}</span> },
+          { key: "prefix", label: "Prefix", render: (g: RoutingGateway) => <span className="text-surface-300 font-mono whitespace-nowrap">{g.prefix || "—"}</span> },
+          { key: "prefixStyle", label: "Mode", textAlign: "center" as const, render: (g: RoutingGateway) => <span className="text-surface-300">{PREFIX_MODE_LABELS[g.prefixStyle] || "—"}</span> },
+          { key: "gatewayGroups", label: "Gw Group", render: (g: RoutingGateway) => <span className="text-surface-300 whitespace-nowrap max-w-[100px] truncate block" title={g.gatewayGroups}>{g.gatewayGroups || "—"}</span> },
+          { key: "mappingGatewayNames", label: "Mapping GW", render: (g: RoutingGateway) => (
+            g.mappingGatewayNames ? (
+              <span className={g.callerPrefixesAllow === 1 ? "text-emerald-400" : "text-amber-400"}>
+                {g.mappingGatewayNames}
+                <span className="text-[10px] ml-1 text-surface-500">({g.callerPrefixesAllow === 1 ? "allow" : "forbid"})</span>
+              </span>
+            ) : <span className="text-surface-300">—</span>
+          )},
+          { key: "lockType", label: "Lock", textAlign: "center" as const, render: (g: RoutingGateway) => (
+            <span className={`inline-flex px-1.5 py-0.5 rounded text-[10px] font-medium ${g.lockType === 0 ? "bg-emerald-500/10 text-emerald-400" : "bg-red-500/10 text-red-400"}`}>
+              {LOCK_LABELS[g.lockType] || "—"}
+            </span>
+          )},
+          { key: "capacity", label: "Limit", textAlign: "right" as const, render: (g: RoutingGateway) => <span className="text-surface-300 tabular-nums">{g.capacity || "—"}</span> },
+          { key: "priority", label: "Priority", textAlign: "right" as const, render: (g: RoutingGateway) => <span className="text-surface-300 tabular-nums">{g.priority}</span> },
+          { key: "memo", label: "Setting", render: (g: RoutingGateway) => <span className="text-surface-300 max-w-[100px] truncate block" title={g.memo}>{g.memo || "—"}</span> },
+          { key: "remoteIps", label: "IP", render: (g: RoutingGateway) => <span className="text-surface-300 font-mono text-[10px] whitespace-nowrap max-w-[100px] truncate block" title={g.remoteIps}>{g.remoteIps || "—"}</span> },
+          { key: "password", label: "Config Pwd", render: (g: RoutingGateway) => <span className="text-surface-300 font-mono text-[10px] max-w-[80px] truncate block" title={g.password}>{g.password || "—"}</span> },
+          { key: "customerPassword", label: "Self-Svc Pwd", render: (g: RoutingGateway) => <span className="text-surface-300 font-mono text-[10px] max-w-[80px] truncate block" title={g.customerPassword}>{g.customerPassword || "—"}</span> },
+          { key: "callerBlacklistPolicy", label: "Caller BL/WL", textAlign: "center" as const, render: (g: RoutingGateway) => (
+            <span className={`inline-flex px-1.5 py-0.5 rounded text-[10px] font-medium ${g.callerBlacklistPolicy === 0 ? "bg-emerald-500/10 text-emerald-400" : g.callerBlacklistPolicy === 1 ? "bg-red-500/10 text-red-400" : "bg-surface-800 text-surface-500"}`}>
+              {BL_LABELS[g.callerBlacklistPolicy] || "None"}
+            </span>
+          )},
+          { key: "calleeBlacklistPolicy", label: "Callee BL/WL", textAlign: "center" as const, render: (g: RoutingGateway) => (
+            <span className={`inline-flex px-1.5 py-0.5 rounded text-[10px] font-medium ${g.calleeBlacklistPolicy === 0 ? "bg-emerald-500/10 text-emerald-400" : g.calleeBlacklistPolicy === 1 ? "bg-red-500/10 text-red-400" : "bg-surface-800 text-surface-500"}`}>
+              {BL_LABELS[g.calleeBlacklistPolicy] || "None"}
+            </span>
+          )},
+          { key: "clearingCustomerId", label: "Clr Acct ID", textAlign: "right" as const, render: (g: RoutingGateway) => <span className="text-surface-300 tabular-nums">{g.clearingCustomerId || "—"}</span> },
+          { key: "clearingName", label: "Acct Name", render: (g: RoutingGateway) => <span className="text-surface-300 whitespace-nowrap max-w-[100px] truncate block" title={g.clearingName}>{g.clearingName || "—"}</span> },
+          { key: "clearingBalance", label: "Balance", textAlign: "right" as const, render: (g: RoutingGateway) => (
+            <span className={`font-mono tabular-nums ${g.clearingBalance < 0 ? "text-red-400" : g.clearingBalance > 0 ? "text-emerald-400" : "text-surface-300"}`}>
+              ${g.clearingBalance.toFixed(4)}
+            </span>
+          )},
+          { key: "billing", label: "Billing #", render: (g: RoutingGateway) => (
+            g.rewriteInCallee ? (
+              <span className="text-surface-300 text-[10px] whitespace-nowrap">
+                <span className="text-brand-400">pre:</span>{g.rewriteInCallee}
+                {g.rewriteInCaller && <><span className="text-surface-600 mx-0.5">|</span><span className="text-amber-400">post:</span>{g.rewriteInCaller}</>}
+              </span>
+            ) : <span className="text-surface-300">—</span>
+          )},
+          { key: "actions", label: "Act", textAlign: "center" as const, width: "5rem", render: (g: RoutingGateway) => (
+            <div className="flex items-center justify-center gap-0.5">
+              <button onClick={() => openEdit(g)} className="p-1 rounded hover:bg-surface-700 text-surface-400 hover:text-surface-50" title="Edit"><Edit2 className="w-3 h-3"/></button>
+              <button onClick={() => handleDelete(g.id)} disabled={deletingIds.has(g.id)} className="p-1 rounded hover:bg-red-500/10 text-surface-400 hover:text-red-400 disabled:opacity-50" title="Delete"><Trash2 className="w-3 h-3"/></button>
             </div>
-          ))}
-        </div>
-      )}
+          )},
+        ]}
+        data={gateways}
+        loading={loading}
+        emptyIcon={<ArrowLeftRight className="w-10 h-10 text-surface-600" />}
+        emptyMessage="No routing gateways found"
+        emptySubtitle="Try searching by name, prefix, or IP address"
+        pageSize={20}
+      />
 
       {/* Add/Edit Modal */}
       {showModal && (
@@ -155,15 +281,15 @@ export default function RoutingGatewayPage() {
               <div className="grid grid-cols-2 gap-3">
                 <div><label className="block text-xs font-medium text-surface-400 mb-1">Name *</label><input value={form.name} onChange={e => setForm({...form, name: e.target.value})} className="w-full px-3 py-2 bg-surface-800 border border-surface-700/50 rounded-lg text-surface-50 text-sm focus:outline-none focus:border-brand-500/50"/></div>
                 <div><label className="block text-xs font-medium text-surface-400 mb-1">Prefix</label><input value={form.prefix} onChange={e => setForm({...form, prefix: e.target.value})} className="w-full px-3 py-2 bg-surface-800 border border-surface-700/50 rounded-lg text-surface-50 text-sm focus:outline-none focus:border-brand-500/50"/></div>
-                <div><label className="block text-xs font-medium text-surface-400 mb-1">Protocol</label><select value={form.protocol} onChange={e => setForm({...form, protocol: e.target.value})} className="w-full px-3 py-2 bg-surface-800 border border-surface-700/50 rounded-lg text-surface-50 text-sm focus:outline-none"><option value="0">SIP</option><option value="1">H.323</option><option value="2">IAX2</option></select></div>
                 <div><label className="block text-xs font-medium text-surface-400 mb-1">Remote IPs</label><input value={form.remoteIps} onChange={e => setForm({...form, remoteIps: e.target.value})} className="w-full px-3 py-2 bg-surface-800 border border-surface-700/50 rounded-lg text-surface-50 text-sm focus:outline-none focus:border-brand-500/50"/></div>
-                <div><label className="block text-xs font-medium text-surface-400 mb-1">Signal Port</label><input type="number" value={form.signalPort} onChange={e => setForm({...form, signalPort: parseInt(e.target.value)||5060})} className="w-full px-3 py-2 bg-surface-800 border border-surface-700/50 rounded-lg text-surface-50 text-sm focus:outline-none focus:border-brand-500/50"/></div>
                 <div><label className="block text-xs font-medium text-surface-400 mb-1">Capacity</label><input type="number" value={form.capacity} onChange={e => setForm({...form, capacity: parseInt(e.target.value)||0})} className="w-full px-3 py-2 bg-surface-800 border border-surface-700/50 rounded-lg text-surface-50 text-sm focus:outline-none focus:border-brand-500/50"/></div>
                 <div><label className="block text-xs font-medium text-surface-400 mb-1">Priority</label><input type="number" value={form.priority} onChange={e => setForm({...form, priority: parseInt(e.target.value)||0})} className="w-full px-3 py-2 bg-surface-800 border border-surface-700/50 rounded-lg text-surface-50 text-sm focus:outline-none focus:border-brand-500/50"/></div>
-                <div><label className="block text-xs font-medium text-surface-400 mb-1">Status</label><select value={form.lockType} onChange={e => setForm({...form, lockType: parseInt(e.target.value)})} className="w-full px-3 py-2 bg-surface-800 border border-surface-700/50 rounded-lg text-surface-50 text-sm focus:outline-none"><option value={0}>Active</option><option value={1}>Locked</option></select></div>
+                <div><label className="block text-xs font-medium text-surface-400 mb-1">Config Password</label><input type="password" value={form.password} onChange={e => setForm({...form, password: e.target.value})} className="w-full px-3 py-2 bg-surface-800 border border-surface-700/50 rounded-lg text-surface-50 text-sm focus:outline-none focus:border-brand-500/50"/></div>
+                <div><label className="block text-xs font-medium text-surface-400 mb-1">Self-Svc Password</label><input type="password" value={form.customerPassword} onChange={e => setForm({...form, customerPassword: e.target.value})} className="w-full px-3 py-2 bg-surface-800 border border-surface-700/50 rounded-lg text-surface-50 text-sm focus:outline-none focus:border-brand-500/50"/></div>
+                <div><label className="block text-xs font-medium text-surface-400 mb-1">Status</label><select value={form.lockType} onChange={e => setForm({...form, lockType: parseInt(e.target.value)})} className="w-full px-3 py-2 bg-surface-800 border border-surface-700/50 rounded-lg text-surface-50 text-sm focus:outline-none"><option value={0}>No Lock</option><option value={1}>Bar All Call</option></select></div>
               </div>
               <div><label className="block text-xs font-medium text-surface-400 mb-1">Gateway Groups</label><input value={form.gatewayGroups} onChange={e => setForm({...form, gatewayGroups: e.target.value})} className="w-full px-3 py-2 bg-surface-800 border border-surface-700/50 rounded-lg text-surface-50 text-sm focus:outline-none focus:border-brand-500/50"/></div>
-              <div><label className="block text-xs font-medium text-surface-400 mb-1">Memo</label><textarea value={form.memo} onChange={e => setForm({...form, memo: e.target.value})} rows={2} className="w-full px-3 py-2 bg-surface-800 border border-surface-700/50 rounded-lg text-surface-50 text-sm focus:outline-none focus:border-brand-500/50 resize-none"/></div>
+              <div><label className="block text-xs font-medium text-surface-400 mb-1">Memo / Additional Settings</label><textarea value={form.memo} onChange={e => setForm({...form, memo: e.target.value})} rows={2} className="w-full px-3 py-2 bg-surface-800 border border-surface-700/50 rounded-lg text-surface-50 text-sm focus:outline-none focus:border-brand-500/50 resize-none"/></div>
             </div>
             <div className="px-6 py-4 border-t border-surface-800 flex gap-3">
               <button onClick={() => setShowModal(false)} className="flex-1 px-4 py-2 border border-surface-700 text-surface-300 rounded-lg text-sm hover:bg-surface-800">Cancel</button>

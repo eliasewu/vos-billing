@@ -91,3 +91,52 @@ body {
 :root::-webkit-scrollbar-thumb:hover {
   background: var(--app-surface-500);
 }
+
+/* ── Mobile-friendly utilities ── */
+/* Smooth scrolling for tables on touch devices */
+@media (max-width: 640px) {
+  .overflow-x-auto {
+    -webkit-overflow-scrolling: touch;
+  }
+
+  /* Prevent iOS zoom on form inputs (16px minimum prevents auto-zoom) */
+  input[type="text"],
+  input[type="password"],
+  input[type="email"],
+  input[type="number"],
+  input[type="search"],
+  select,
+  textarea {
+    font-size: 16px !important;
+  }
+}
+
+/* Ensure nav touch targets are at least 44px on iOS (Apple HIG) */
+@supports (-webkit-touch-callout: none) {
+  nav a, nav button, .mobile-tap-target {
+    min-height: 44px;
+    min-width: 44px;
+  }
+}
+
+/* Mobile sidebar overlay - prevent body scroll when open */
+body.sidebar-open {
+  overflow: hidden;
+}
+
+/* Responsive table wrapper - subtle shadow hint for scrollable tables */
+@media (max-width: 1024px) {
+  .table-responsive {
+    -webkit-overflow-scrolling: touch;
+    overflow-x: auto;
+    background:
+      linear-gradient(to right, var(--app-surface-950) 30%, transparent),
+      linear-gradient(to left, var(--app-surface-950) 30%, transparent),
+      radial-gradient(farthest-side at 0 50%, rgba(0,0,0,0.2), transparent),
+      radial-gradient(farthest-side at 100% 50%, rgba(0,0,0,0.2), transparent);
+    background-position: 0 0, 100% 0, 0 0, 100% 0;
+    background-repeat: no-repeat;
+    background-size: 40px 100%, 40px 100%, 14px 100%, 14px 100%;
+    background-attachment: local, local, scroll, scroll;
+  }
+}

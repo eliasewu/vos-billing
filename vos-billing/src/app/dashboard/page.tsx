@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState, useCallback } from "react";
+import { useRouter } from "next/navigation";
 import {
   Users,
   Server,
@@ -18,9 +19,12 @@ import {
   FileText,
   Clock,
   Building2,
+  CalendarDays,
+  BarChart3,
 } from "lucide-react";
 import StatCard from "@/components/StatCard";
 import SkeletonCard from "@/components/SkeletonCard";
+import { safeErrorString } from "@/lib/utils";
 
 interface Stats {
   clientCount: number;
@@ -52,42 +56,65 @@ interface Stats {
     topCustomers: Array<{
       customerId: number;
       customerName: string;
+      customerType: number;
       total: number;
       billCount: number;
       pending: number;
     }>;
   };
+  // Period-based financial breakdown
+  period: string;
+  periodRevenue: number;
+  periodCost: number;
+  periodNetProfit: number;
+  periodPendingAmount: number;
+  financialByPeriod: Array<{
+    period: string;
+    revenue: number;
+    cost: number;
+    netProfit: number;
+    pendingAmount: number;
+    calls: number;
+  }>;
 }
 
 export default function DashboardPage() {
+  const router = useRouter();
   const [stats, setStats] = useState<Stats | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
+  const [period, setPeriod] = useState<"daily" | "monthly" | "yearly">("daily");
 
-  const fetchStats = useCallback(async () => {
+  const fetchStats = useCallback(async (signal?: AbortSignal) => {
     try {
-      const res = await fetch("/api/stats");
+      const res = await fetch(`/api/stats?period=${period}`, { signal });
       const data = await res.json();
+      if (signal?.aborted) return;
       if (data.error) {
-        setError(data.error);
+        setError(safeErrorString(data.error));
       } else {
         setStats(data);
         setError("");
         setLastUpdated(new Date());
       }
-    } catch {
-      // Keep existing stats on refresh failure, only show error on initial load
-      setError("Failed to refresh stats");
+    } catch (e: any) {
+      if (e?.name === "AbortError") return;
+      if (!stats) setError(safeErrorString("Failed to refresh stats"));
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [period]);
 
   useEffect(() => {
-    fetchStats();
-    const interval = setInterval(fetchStats, 5000);
-    return () => clearInterval(interval);
+    setLoading(true);
+    const controller = new AbortController();
+    fetchStats(controller.signal);
+    const interval = setInterval(() => fetchStats(), 5000);
+    return () => {
+      clearInterval(interval);
+      controller.abort();
+    };
   }, [fetchStats]);
 
   const formatCurrency = (val: number) =>
@@ -180,7 +207,7 @@ export default function DashboardPage() {
 
       {error && (
         <div className="p-4 bg-red-500/10 border border-red-500/20 rounded-xl">
-          <p className="text-sm text-red-400">{error}</p>
+          <p className="text-sm text-red-400">{safeErrorString(error)}</p>
         </div>
       )}
 
@@ -216,22 +243,126 @@ export default function DashboardPage() {
         />
       </div>
 
-      {/* Row 2 — Financial Stats */}
+      {/* Row 2 — Financial Stats with Period Selector */}
+      <div className="bg-surface-900 border border-surface-700/50 rounded-xl p-6">
+        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-5">
+          <div className="flex items-center gap-2">
+            <BarChart3 className="w-5 h-5 text-brand-400" />
+            <h3 className="text-sm font-semibold text-surface-50">Financial Overview</h3>
+          </div>
+          {/* Period Selector */}
+          <div className="flex items-center gap-1 bg-surface-800 border border-surface-700/50 rounded-lg p-1">
+            {(["daily", "monthly", "yearly"] as const).map((p) => (
+              <button
+                key={p}
+                onClick={() => setPeriod(p)}
+                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium transition-colors ${
+                  period === p
+                    ? "bg-brand-600 text-white shadow-sm"
+                    : "text-surface-400 hover:text-surface-50 hover:bg-surface-700"
+                }`}
+              >
+                <CalendarDays className="w-3.5 h-3.5" />
+                {p === "daily" ? "Daily" : p === "monthly" ? "Monthly" : "Yearly"}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        {/* Period stat cards */}
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-5">
+          <StatCard
+            title={`Revenue (${period === "daily" ? "30 days" : period === "monthly" ? "12 months" : "5 years"})`}
+            value={formatCurrency(stats?.periodRevenue ?? 0)}
+            icon={DollarSign}
+            color="green"
+          />
+          <StatCard
+            title={`Cost`}
+            value={formatCurrency(stats?.periodCost ?? 0)}
+            icon={TrendingUp}
+            color="red"
+          />
+          <StatCard
+            title="Net Profit"
+            value={formatCurrency(stats?.periodNetProfit ?? 0)}
+            icon={Activity}
+            color="blue"
+            subtitle={`Margin: ${(stats?.periodRevenue ?? 0) > 0 ? ((stats?.periodNetProfit ?? 0) / (stats?.periodRevenue ?? 1) * 100).toFixed(1) : "0"}%`}
+          />
+          <StatCard
+            title="Pending Billing"
+            value={formatCurrency(stats?.periodPendingAmount ?? 0)}
+            icon={Clock}
+            color="yellow"
+            subtitle={(stats?.periodPendingAmount ?? 0) > 0 ? "Awaiting payment" : "All settled"}
+          />
+        </div>
+
+        {/* Financial Breakdown Table */}
+        {stats?.financialByPeriod?.length ? (
+          <div>
+            <h4 className="text-xs font-medium text-surface-400 uppercase tracking-wider mb-3">
+              {period === "daily" ? "Daily Breakdown (Last 30 Days)" : period === "monthly" ? "Monthly Breakdown (Last 12 Months)" : "Yearly Breakdown (Last 5 Years)"}
+            </h4>
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="border-b border-surface-700/50">
+                    <th className="text-left py-2 px-3 text-xs font-medium text-surface-500">
+                      {period === "daily" ? "Date" : period === "monthly" ? "Month" : "Year"}
+                    </th>
+                    <th className="text-right py-2 px-3 text-xs font-medium text-surface-500">Calls</th>
+                    <th className="text-right py-2 px-3 text-xs font-medium text-surface-500">Revenue</th>
+                    <th className="text-right py-2 px-3 text-xs font-medium text-surface-500">Cost</th>
+                    <th className="text-right py-2 px-3 text-xs font-medium text-surface-500">Net Profit</th>
+                    <th className="text-right py-2 px-3 text-xs font-medium text-surface-500">Pending</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {stats.financialByPeriod.map((row, i) => (
+                    <tr key={row.period} className={`border-b border-surface-800/50 hover:bg-surface-800/30 transition-colors ${i % 2 === 0 ? "bg-surface-800/10" : ""}`}>
+                      <td className="py-2.5 px-3 text-surface-200 font-medium">{row.period}</td>
+                      <td className="py-2.5 px-3 text-right text-surface-400">{row.calls.toLocaleString()}</td>
+                      <td className="py-2.5 px-3 text-right text-emerald-400 font-medium">{formatCurrency(row.revenue)}</td>
+                      <td className="py-2.5 px-3 text-right text-red-400">{formatCurrency(row.cost)}</td>
+                      <td className="py-2.5 px-3 text-right">
+                        <span className={row.netProfit >= 0 ? "text-brand-400 font-medium" : "text-red-400 font-medium"}>
+                          {formatCurrency(row.netProfit)}
+                        </span>
+                      </td>
+                      <td className="py-2.5 px-3 text-right">
+                        <span className={row.pendingAmount > 0 ? "text-amber-400" : "text-surface-500"}>
+                          {row.pendingAmount > 0 ? formatCurrency(row.pendingAmount) : "—"}
+                        </span>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        ) : (
+          <p className="text-sm text-surface-500 py-4 text-center">No financial data for this period yet.</p>
+        )}
+      </div>
+
+      {/* Row 2a — All-time Summary Cards */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
         <StatCard
-          title="Total Revenue"
+          title="Total Revenue (All Time)"
           value={formatCurrency(stats?.totalRevenue ?? 0)}
           icon={DollarSign}
           color="green"
         />
         <StatCard
-          title="Total Cost"
+          title="Total Cost (All Time)"
           value={formatCurrency(stats?.totalCost ?? 0)}
           icon={TrendingUp}
           color="red"
         />
         <StatCard
-          title="Net Margin"
+          title="Net Margin (All Time)"
           value={formatCurrency(stats?.totalMargin ?? 0)}
           icon={Activity}
           color="blue"
@@ -245,7 +376,7 @@ export default function DashboardPage() {
         />
       </div>
 
-      {/* Row 2.5 — Billing Summary */}
+      {/* Row 2b — Billing Summary */}
       <div className="bg-surface-900 border border-surface-700/50 rounded-xl p-6">
         <div className="flex items-center gap-2 mb-4">
           <FileText className="w-5 h-5 text-amber-400" />
@@ -289,6 +420,7 @@ export default function DashboardPage() {
                   <tr className="border-b border-surface-700/50">
                     <th className="text-left py-2 px-3 text-xs font-medium text-surface-500">#</th>
                     <th className="text-left py-2 px-3 text-xs font-medium text-surface-500">Customer</th>
+                    <th className="text-left py-2 px-3 text-xs font-medium text-surface-500">Type</th>
                     <th className="text-right py-2 px-3 text-xs font-medium text-surface-500">Bills</th>
                     <th className="text-right py-2 px-3 text-xs font-medium text-surface-500">Total</th>
                     <th className="text-right py-2 px-3 text-xs font-medium text-surface-500">Pending</th>
@@ -306,10 +438,20 @@ export default function DashboardPage() {
                           <div className="w-7 h-7 rounded-lg bg-brand-500/10 flex items-center justify-center flex-shrink-0">
                             <Building2 className="w-3.5 h-3.5 text-brand-400" />
                           </div>
-                          <span className="text-surface-200 font-medium truncate max-w-[140px]">
+                          <div onClick={() => router.push(`/dashboard/accounts/${cust.customerId}`)} 
+                            className="text-surface-200 font-medium truncate max-w-[140px] hover:text-brand-400 transition-colors cursor-pointer text-left" role="link" tabIndex={0}>
                             {cust.customerName}
-                          </span>
+                          </div>
                         </div>
+                      </td>
+                      <td className="py-2.5 px-3">
+                        <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${
+                          cust.customerType === 1
+                            ? 'bg-violet-500/10 text-violet-400'
+                            : 'bg-blue-500/10 text-blue-400'
+                        }`}>
+                          {cust.customerType === 1 ? 'Clearing' : 'General'}
+                        </span>
                       </td>
                       <td className="py-2.5 px-3 text-right text-surface-400">
                         {cust.billCount}
@@ -380,8 +522,8 @@ export default function DashboardPage() {
           </h3>
           <div className="space-y-3">
             {(stats?.cdrByStatus ?? []).map((item) => {
-              const total = stats?.totalCalls ?? 1;
-              const pct = Number(((item.count / total) * 100)).toFixed(1);
+              const total = stats?.totalCalls || 1;
+              const pct = ((item.count / total) * 100).toFixed(1);
               const colors: Record<string, string> = {
                 answered: "bg-emerald-500",
                 failed: "bg-red-500",
@@ -418,15 +560,13 @@ export default function DashboardPage() {
               );
             })}
           </div>
-        </div>
-
-        {/* Top Destinations */}
+        </div>          {/* Top Destinations */}
         <div className="bg-surface-900 border border-surface-700/50 rounded-xl p-6">
           <h3 className="text-sm font-semibold text-surface-50 mb-4">
             Top Destinations
           </h3>
           <div className="space-y-3">
-            {(stats?.topDestinations ?? []).slice(0, 5).map((dest, i) => (
+            {((stats?.topDestinations ?? []) as Array<any>).slice(0, 5).map((dest, i) => (
               <div
                 key={dest.destination || i}
                 className="flex items-center justify-between"
@@ -449,7 +589,7 @@ export default function DashboardPage() {
                 </div>
               </div>
             ))}
-            {(!stats?.topDestinations || stats.topDestinations.length === 0) && (
+            {(!stats?.topDestinations?.length) && (
               <p className="text-sm text-surface-500 py-4 text-center">
                 No destination data available
               </p>

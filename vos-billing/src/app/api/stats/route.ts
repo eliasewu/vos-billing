@@ -1,9 +1,33 @@
-import { NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 import { queryVos } from "@/lib/vos-db";
 import { mapEndreason } from "@/lib/vos-utils";
 
-export async function GET() {
+export async function GET(request: NextRequest) {
   try {
+    const period = request.nextUrl.searchParams.get("period") || "daily"; // daily | monthly | yearly
+    
+    // Determine date grouping format and range based on period
+    let cdrGroupFormat: string;
+    let cdrDateFilter: string;
+    let billingGroupFormat: string;
+    let billingDateFilter: string;
+    
+    if (period === "yearly") {
+      cdrGroupFormat = "%Y";
+      cdrDateFilter = "starttime >= DATE_SUB(NOW(), INTERVAL 5 YEAR)";
+      billingGroupFormat = "%Y";
+      billingDateFilter = "bill_date >= DATE_SUB(NOW(), INTERVAL 5 YEAR)";
+    } else if (period === "monthly") {
+      cdrGroupFormat = "%Y-%m";
+      cdrDateFilter = "starttime >= DATE_SUB(NOW(), INTERVAL 12 MONTH)";
+      billingGroupFormat = "%Y-%m";
+      billingDateFilter = "bill_date >= DATE_SUB(NOW(), INTERVAL 12 MONTH)";
+    } else {
+      cdrGroupFormat = "%Y-%m-%d";
+      cdrDateFilter = "starttime >= DATE_SUB(NOW(), INTERVAL 30 DAY)";
+      billingGroupFormat = "%Y-%m-%d";
+      billingDateFilter = "bill_date >= DATE_SUB(NOW(), INTERVAL 30 DAY)";
+    }
     // Customer counts: total active customers from e_customer
     const customerResult = await queryVos<{ cnt: number }>(
       `SELECT COUNT(*) AS cnt FROM e_customer WHERE status = 0`
@@ -27,6 +51,7 @@ export async function GET() {
       FROM e_cdr`
     );
 
+    // Use sanitised values (Buffers already converted by queryVos)
     const stats = cdrStats[0];
     const totalCalls = Number(stats?.totalCalls ?? 0);
     const answeredCalls = Number(stats?.answeredCalls ?? 0);
@@ -56,7 +81,7 @@ export async function GET() {
     const balanceResult = await queryVos<{ totalBalance: number }>(
       `SELECT COALESCE(SUM(money), 0) AS totalBalance FROM e_customer WHERE status = 0`
     );
-    const totalClientBalance = Number(balanceResult[0]?.totalBalance ?? 0);
+    const totalClientBalance = Number(balanceResult[0]?.totalBalance ?? 0);  // Buffer→number handled by queryVos
 
     // CDR by destination (top 6 by call count for answered calls)
     const topDestinations = await queryVos<{
@@ -116,8 +141,67 @@ export async function GET() {
       ORDER BY hour`
     );
 
-    // --- Billing Summary ---
-    let billingSummary = { totalBilled: 0, pendingBills: 0, pendingAmount: 0, topCustomers: [] as any[] };
+    // --- Period-based Financial Breakdown (Revenue, Cost, Net Profit, Pending) ---
+    let periodRevenue = 0;
+    let periodCost = 0;
+    let periodNetProfit = 0;
+    let periodPendingAmount = 0;
+    const financialByPeriod: Array<{period: string; revenue: number; cost: number; netProfit: number; pendingAmount: number; calls: number}> = [];
+    
+    try {
+      // CDR: revenue & cost grouped by period
+      const cdrPeriodRows = await queryVos<any>(
+        `SELECT
+          DATE_FORMAT(starttime, '${cdrGroupFormat}') AS period_label,
+          COUNT(*) AS calls,
+          COALESCE(SUM(incomefee), 0) AS revenue,
+          COALESCE(SUM(fee), 0) AS cost
+        FROM e_cdr
+        WHERE ${cdrDateFilter}
+        GROUP BY period_label
+        ORDER BY period_label ASC`
+      ) as any[];
+      
+      // Billing: pending amount grouped by period
+      const billingPeriodRows = await queryVos<any>(
+        `SELECT
+          DATE_FORMAT(bill_date, '${billingGroupFormat}') AS period_label,
+          COALESCE(SUM(CASE WHEN status = 0 THEN total_fee ELSE 0 END), 0) AS pending
+        FROM e_billing
+        WHERE ${billingDateFilter}
+        GROUP BY period_label
+        ORDER BY period_label ASC`
+      ) as any[];
+      
+      // Build a map of billing pending by period
+      const pendingMap = new Map<string, number>();
+      for (const r of billingPeriodRows) {
+        pendingMap.set(String(r.period_label), Number(r.pending || 0));
+      }
+      
+      // Merge CDR and billing data
+      for (const r of cdrPeriodRows) {
+        const label = String(r.period_label);
+        const revenue = Number(r.revenue || 0);
+        const cost = Number(r.cost || 0);
+        const pending = pendingMap.get(label) || 0;
+        periodRevenue += revenue;
+        periodCost += cost;
+        periodPendingAmount += pending;
+        financialByPeriod.push({
+          period: label,
+          revenue,
+          cost,
+          netProfit: revenue - cost,
+          pendingAmount: pending,
+          calls: Number(r.calls || 0),
+        });
+      }
+      periodNetProfit = periodRevenue - periodCost;
+    } catch { /* tables may not exist yet */ }
+
+    // --- All-time Billing Summary ---
+    let billingSummary = { totalBilled: 0, pendingBills: 0, pendingAmount: 0, topCustomers: [] as Array<{customerId:number;customerName:string;customerType:number;total:number;billCount:number;pending:number}> };
     try {
       const billingAgg = await queryVos<any>(
         `SELECT
@@ -131,23 +215,29 @@ export async function GET() {
       billingSummary.pendingBills = Number(ba.pending_count || 0);
       billingSummary.pendingAmount = Number(ba.pending_amount || 0);
 
-      // Top 5 customers by total billed
+      // Top 5 customers by total billed — show real customer name from general/clearing accounts
       const topCust = await queryVos<any>(
         `SELECT
           b.customer_id,
-          c.name AS customer_name,
+          COALESCE(
+            NULLIF(TRIM(c.name), ''),
+            NULLIF(TRIM(c.account), ''),
+            CONCAT('Account #', b.customer_id)
+          ) AS customer_name,
+          COALESCE(c.type, 0) AS customer_type,
           COALESCE(SUM(b.total_fee), 0) AS total,
           COUNT(*) AS bill_count,
           COALESCE(SUM(CASE WHEN b.status = 0 THEN b.total_fee ELSE 0 END), 0) AS pending
         FROM e_billing b
         LEFT JOIN e_customer c ON b.customer_id = c.id
-        GROUP BY b.customer_id, c.name
+        GROUP BY b.customer_id, c.name, c.account, c.type
         ORDER BY total DESC
         LIMIT 5`
       ) as any[];
       billingSummary.topCustomers = (topCust as any[]).map(r => ({
-        customerId: r.customer_id,
-        customerName: r.customer_name || `Client #${r.customer_id}`,
+        customerId: Number(r.customer_id) || 0,
+        customerName: String(r.customer_name || `Client #${Number(r.customer_id)}`),
+        customerType: Number(r.customer_type) || 0,
         total: Number(r.total || 0),
         billCount: Number(r.bill_count || 0),
         pending: Number(r.pending || 0),
@@ -172,6 +262,13 @@ export async function GET() {
       cdrByStatus,
       hourlyTraffic,
       billingSummary,
+      // Period-based financials
+      period,
+      periodRevenue,
+      periodCost,
+      periodNetProfit,
+      periodPendingAmount,
+      financialByPeriod,
     });
   } catch (error) {
     console.error("Stats API error:", error);
@@ -181,6 +278,8 @@ export async function GET() {
       asr: 0, acd: 0, activeGateways: 0, unacknowledgedAlerts: 0,
       totalClientBalance: 0, topDestinations: [], cdrByStatus: [], hourlyTraffic: [],
       billingSummary: { totalBilled: 0, pendingBills: 0, pendingAmount: 0, topCustomers: [] },
+      period: "daily", periodRevenue: 0, periodCost: 0, periodNetProfit: 0, periodPendingAmount: 0,
+      financialByPeriod: [],
     });
   }
 }

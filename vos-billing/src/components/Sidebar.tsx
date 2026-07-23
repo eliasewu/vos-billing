@@ -44,8 +44,9 @@ import {
   Zap,
   Shield,
   X,
+  Mail,
 } from "lucide-react";
-import { useState } from "react";
+import { useState, useEffect } from "react";
 
 interface NavItem {
   href: string;
@@ -65,6 +66,36 @@ function isNavSection(item: MenuItem): item is NavSection {
   return "children" in item && !("href" in item);
 }
 
+const TOP_LEVEL_SECTIONS = new Set([
+  "Rate Management", "Package Management", "Account Management",
+  "Operation Management", "CDR Analysis", "Data Query",
+  "Data Reporting", "Cards Management", "Alarm Management", "System Management"
+]);
+
+// Map URL path prefixes to the top-level section that should be expanded
+const PATH_TO_SECTION: [string, string][] = [
+  ["/dashboard/rates", "Rate Management"],
+  ["/dashboard/packages", "Package Management"],
+  ["/dashboard/accounts", "Account Management"],
+  ["/dashboard/clearing", "Account Management"],
+  ["/dashboard/operation", "Operation Management"],
+  ["/dashboard/cdr", "CDR Analysis"],
+  ["/dashboard/data-query", "Data Query"],
+  ["/dashboard/reports", "Data Reporting"],
+  ["/dashboard/cards", "Cards Management"],
+  ["/dashboard/alarms", "Alarm Management"],
+  ["/dashboard/system", "System Management"],
+];
+
+function getExpandedSection(pathname: string): string | null {
+  for (const [prefix, section] of PATH_TO_SECTION) {
+    if (pathname === prefix || pathname.startsWith(prefix + "/") || pathname.startsWith(prefix + "?")) {
+      return section;
+    }
+  }
+  return null;
+}
+
 const menuSections: MenuItem[] = [
   // Dashboard
   { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
@@ -76,6 +107,8 @@ const menuSections: MenuItem[] = [
     children: [
       { href: "/dashboard/rates/groups", label: "Rate Group Management", icon: Layers },
       { href: "/dashboard/rates", label: "Rate Management", icon: DollarSign },
+      { href: "/dashboard/rates/wizard", label: "Rate Wizard", icon: Zap },
+      { href: "/dashboard/rates/quick-start", label: "Quick Start Wizard", icon: Zap },
     ],
   },
 
@@ -102,6 +135,7 @@ const menuSections: MenuItem[] = [
       { href: "/dashboard/clearing", label: "Clearing Account", icon: Shield },
       { href: "/dashboard/accounts/auth", label: "Authorization Mgmt", icon: Key },
       { href: "/dashboard/accounts/number-limit", label: "Number Section Limit", icon: Hash },
+      { href: "/dashboard/accounts/invoice", label: "Invoice Generator", icon: Receipt },
     ],
   },
 
@@ -124,6 +158,8 @@ const menuSections: MenuItem[] = [
       { href: "/dashboard/operation/business-analysis", label: "Business Analysis", icon: TrendingUp },
       { href: "/dashboard/operation/current-call", label: "Current Call", icon: Activity },
       { href: "/dashboard/operation/call-performance", label: "Call Performance", icon: BarChart3 },
+      { href: "/dashboard/system/routes", label: "Route Management", icon: Route },
+      { href: "/dashboard/operation/gateways/mapping", label: "Mapping Gateway", icon: GitBranch },
     ],
   },
 
@@ -213,6 +249,8 @@ const menuSections: MenuItem[] = [
       { href: "/dashboard/system/users", label: "User Management", icon: Users },
       { href: "/dashboard/system/routes", label: "Route Management", icon: Route },
       { href: "/dashboard/system/numbers", label: "Number Management", icon: Hash },
+      { href: "/dashboard/system/smtp", label: "SMTP Configuration", icon: Mail },
+      { href: "/dashboard/system/prefixes", label: "Prefix Database", icon: Hash },
     ],
   },
 ];
@@ -221,15 +259,46 @@ export default function Sidebar() {
   const pathname = usePathname();
   const searchParams = useSearchParams();
   const [collapsed, setCollapsed] = useState(false);
-  const [expandedSections, setExpandedSections] = useState<Set<string>>(
-    new Set(["Rate Management", "Package Management", "Account Management", "Operation Management", "Gateway Operation", "Data Query", "Data Reporting", "Cards Management", "Alarm Management", "System Management", "CDR Analysis", "Mapping Gateway", "Routing Gateway"])
-  );
+  const [expandedSections, setExpandedSections] = useState<Set<string>>(() => {
+    const section = getExpandedSection(pathname);
+    return new Set(section ? [section] : []);
+  });
+
+  // Auto-expand the section containing current page when navigating
+  useEffect(() => {
+    const section = getExpandedSection(pathname);
+    if (!section) return;
+    setExpandedSections(prev => {
+      // Skip if already correct (avoids redundant re-render on initial mount)
+      if (prev.has(section) && [...prev].every(s => !TOP_LEVEL_SECTIONS.has(s) || s === section)) {
+        return prev;
+      }
+      const next = new Set(prev);
+      // Only close other top-level sections (accordion behavior)
+      for (const topLabel of TOP_LEVEL_SECTIONS) {
+        if (topLabel !== section) next.delete(topLabel);
+      }
+      next.add(section);
+      return next;
+    });
+  }, [pathname]);
 
   const toggleSection = (label: string) => {
     setExpandedSections((prev) => {
       const next = new Set(prev);
-      if (next.has(label)) next.delete(label);
-      else next.add(label);
+      
+      if (next.has(label)) {
+        // Close this section
+        next.delete(label);
+      } else {
+        // If it's a top-level section, close all other top-level sections (accordion)
+        if (TOP_LEVEL_SECTIONS.has(label)) {
+          for (const topLabel of TOP_LEVEL_SECTIONS) {
+            next.delete(topLabel);
+          }
+        }
+        next.add(label);
+      }
       return next;
     });
   };
@@ -247,14 +316,16 @@ export default function Sidebar() {
 
   const renderItem = (item: NavItem, depth = 0) => {
     const Icon = item.icon;
+    const active = isActive(item.href);
     return (
       <Link
         key={item.href}
         href={item.href}
+        prefetch={!active}
         className={`flex items-center gap-3 px-3 py-2 rounded-lg text-sm font-medium transition-colors ${
-          isActive(item.href)
-            ? "bg-brand-600/20 text-brand-400"
-            : "text-surface-400 hover:bg-surface-800 hover:text-surface-50"
+          active
+            ? "bg-white/20 text-white font-bold"
+            : "text-white/70 hover:bg-white/10 hover:text-white font-bold"
         }`}
         style={{ paddingLeft: `${12 + depth * 14}px` }}
         title={collapsed ? item.label : undefined}
@@ -276,7 +347,7 @@ export default function Sidebar() {
             {!collapsed && (
               <button
                 onClick={() => toggleSection(section.label)}
-                className="w-full flex items-center gap-3 px-3 py-1.5 rounded-lg text-xs font-medium text-surface-500 hover:bg-surface-800 hover:text-surface-300 transition-colors"
+                className="w-full flex items-center gap-3 px-3 py-1.5 rounded-lg text-xs font-bold text-white/50 hover:bg-white/10 hover:text-white/80 transition-colors"
                 style={{ paddingLeft: `${12 + depth * 14}px` }}
               >
                 <SectionIcon className="w-[14px] h-[14px] flex-shrink-0" />
@@ -304,18 +375,18 @@ export default function Sidebar() {
     <aside
       className={`${
         collapsed ? "w-[68px]" : "w-[250px]"
-      } bg-surface-900 border-r border-surface-800 flex flex-col transition-all duration-200 min-h-screen sticky top-0`}
+      } bg-gradient-to-b from-blue-600 to-blue-900 border-r border-brand-500 flex flex-col transition-all duration-300 ease-in-out min-h-screen sticky top-0`}
     >
       {/* Logo */}
-      <div className="h-14 flex items-center px-4 border-b border-surface-800">
+      <div className="h-14 flex items-center px-4 border-b border-brand-500">
         <div className="flex items-center gap-2 overflow-hidden">
-          <div className="w-9 h-9 rounded-lg bg-gradient-to-br from-brand-500 to-emerald-500 flex items-center justify-center flex-shrink-0">
-            <Zap className="w-5 h-5 text-surface-50" />
+          <div className="w-9 h-9 rounded-lg bg-white/20 flex items-center justify-center flex-shrink-0">
+            <Zap className="w-5 h-5 text-white" />
           </div>
           {!collapsed && (
             <div className="whitespace-nowrap">
-              <div className="font-bold text-sm text-surface-50">Net2App</div>
-              <div className="text-[10px] text-surface-500">VOS Billing</div>
+              <div className="font-bold text-sm text-white">Net2App</div>
+              <div className="text-[10px] text-white/60">VOS Billing</div>
             </div>
           )}
         </div>
@@ -333,7 +404,7 @@ export default function Sidebar() {
                 {!collapsed ? (
                   <button
                     onClick={() => toggleSection(section.label)}
-                    className="w-full flex items-center gap-3 px-3 py-2 rounded-lg text-sm font-medium text-surface-400 hover:bg-surface-800 hover:text-surface-50 transition-colors"
+                    className="w-full flex items-center gap-3 px-3 py-2 rounded-lg text-sm font-bold text-white/80 hover:bg-white/10 hover:text-white transition-colors"
                   >
                     <SecIcon className="w-[18px] h-[18px] flex-shrink-0" />
                     <span className="truncate flex-1 text-left">{section.label}</span>
@@ -345,7 +416,7 @@ export default function Sidebar() {
                   </button>
                 ) : (
                   <div
-                    className="flex items-center justify-center px-3 py-2 rounded-lg text-surface-400"
+                    className="flex items-center justify-center px-3 py-2 rounded-lg text-white/70"
                     title={section.label}
                   >
                     <SecIcon className="w-[18px] h-[18px] flex-shrink-0" />
@@ -360,10 +431,10 @@ export default function Sidebar() {
       </nav>
 
       {/* Collapse Toggle */}
-      <div className="border-t border-surface-800 p-2">
+      <div className="border-t border-brand-500 p-2">
         <button
           onClick={() => setCollapsed(!collapsed)}
-          className="w-full flex items-center justify-center gap-2 px-3 py-2 rounded-lg text-surface-500 hover:bg-surface-800 hover:text-surface-50 transition-colors text-sm"
+          className="w-full flex items-center justify-center gap-2 px-3 py-2 rounded-lg text-white/60 hover:bg-white/10 hover:text-white transition-colors text-sm font-bold"
         >
           {collapsed ? (
             <ChevronRight className="w-4 h-4" />

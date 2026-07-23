@@ -188,6 +188,50 @@ export async function GET(_request: NextRequest) {
       failReasons.sort((a, b) => b.count - a.count);
     }
 
+    // SCD (Success Call Distribution) - duration buckets for successful calls
+    const scd: Array<{ label: string; count: number; percentage: number }> = [
+      { label: "0-10s", count: 0, percentage: 0 },
+      { label: "11-30s", count: 0, percentage: 0 },
+      { label: "31-60s", count: 0, percentage: 0 },
+      { label: "1-2m", count: 0, percentage: 0 },
+      { label: "2-5m", count: 0, percentage: 0 },
+      { label: "5-10m", count: 0, percentage: 0 },
+      { label: "10m+", count: 0, percentage: 0 },
+    ];
+    if (tables.length > 0 && successCalls > 0) {
+      for (const tbl of tables.slice(0, 3)) {
+        try {
+          const [row] = (await queryVos<any>(
+            `SELECT
+              SUM(CASE WHEN callduration BETWEEN 0 AND 10 THEN 1 ELSE 0 END) AS v0,
+              SUM(CASE WHEN callduration BETWEEN 11 AND 30 THEN 1 ELSE 0 END) AS v1,
+              SUM(CASE WHEN callduration BETWEEN 31 AND 60 THEN 1 ELSE 0 END) AS v2,
+              SUM(CASE WHEN callduration BETWEEN 61 AND 120 THEN 1 ELSE 0 END) AS v3,
+              SUM(CASE WHEN callduration BETWEEN 121 AND 300 THEN 1 ELSE 0 END) AS v4,
+              SUM(CASE WHEN callduration BETWEEN 301 AND 600 THEN 1 ELSE 0 END) AS v5,
+              SUM(CASE WHEN callduration >= 601 THEN 1 ELSE 0 END) AS v6
+            FROM ${tbl}
+            WHERE (callstatus = 1 OR callstatus = 'answered' OR endreason IS NULL OR endreason = 0 OR endreason = '')`
+          )) as any[];
+          if (row) {
+            scd[0].count += Number(row.v0 || 0);
+            scd[1].count += Number(row.v1 || 0);
+            scd[2].count += Number(row.v2 || 0);
+            scd[3].count += Number(row.v3 || 0);
+            scd[4].count += Number(row.v4 || 0);
+            scd[5].count += Number(row.v5 || 0);
+            scd[6].count += Number(row.v6 || 0);
+          }
+        } catch { continue; }
+      }
+      for (const b of scd) {
+        b.percentage = successCalls > 0 ? parseFloat(((b.count / successCalls) * 100).toFixed(1)) : 0;
+      }
+    }
+
+    // Total minutes breakdown
+    const totalMinutes = Math.round(totalDuration / 60);
+
     return NextResponse.json({
       summary: {
         totalCalls,
@@ -204,8 +248,10 @@ export async function GET(_request: NextRequest) {
       daily,
       hourly,
       peakHour,
+      scd,
       failReasons: failReasons.slice(0, 8),
       tables: tables.length,
+      totalMinutes,
     });
   } catch (error) {
     const message = error instanceof Error ? error.message : "Unknown error";

@@ -54,13 +54,21 @@ interface FailReason {
   count: number;
 }
 
+interface SCDBucket {
+  label: string;
+  count: number;
+  percentage: number;
+}
+
 interface CallPerfData {
   summary: CallSummary;
   daily: DailyPoint[];
   hourly: HourlyPoint[];
   peakHour: PeakHour | null;
+  scd: SCDBucket[];
   failReasons: FailReason[];
   tables: number;
+  totalMinutes: number;
 }
 
 export default function CallPerformancePage() {
@@ -112,6 +120,9 @@ export default function CallPerformancePage() {
   const maxHourlyCalls = data ? Math.max(...data.hourly.map((h) => h.calls), 1) : 1;
   const maxFailCount = data?.failReasons.length
     ? Math.max(...data.failReasons.map((f) => f.count), 1)
+    : 1;
+  const maxScdCount = data?.scd.length
+    ? Math.max(...data.scd.map((b) => b.count), 1)
     : 1;
 
   const exportCSV = () => {
@@ -452,6 +463,48 @@ export default function CallPerformancePage() {
                       </div>
                     );
                   })}
+                </div>
+              )}
+            </div>
+
+            {/* SCD: Success Call Distribution */}
+            <div className="bg-surface-900 border border-surface-700/50 rounded-xl p-5">
+              <h3 className="text-sm font-semibold text-surface-50 flex items-center gap-2 mb-4">
+                <Timer className="w-4 h-4 text-cyan-400" />
+                SCD — Success Call Distribution
+                <span className="text-xs text-surface-500 font-normal ml-auto">
+                  {data.summary.successCalls.toLocaleString()} successful calls
+                </span>
+              </h3>
+              {data.scd.length === 0 || data.scd.every(b => b.count === 0) ? (
+                <div className="text-center py-8">
+                  <BarChart3 className="w-10 h-10 text-surface-600 mx-auto mb-2" />
+                  <p className="text-surface-500 text-sm">No SCD data available</p>
+                </div>
+              ) : (
+                <div className="space-y-2">
+                  {data.scd.map((b) => (
+                    <div key={b.label} className="flex items-center gap-2">
+                      <span className="text-xs text-surface-400 w-16 text-right tabular-nums">
+                        {b.label}
+                      </span>
+                      <div className="flex-1 relative h-6">
+                        <div className="absolute inset-y-1 w-full rounded-sm bg-surface-800" />
+                        <div
+                          className="absolute inset-y-1 rounded-sm bg-cyan-500/40 hover:bg-cyan-500/60 transition-colors"
+                          style={{
+                            width: `${Math.max((b.count / maxScdCount) * 100, 0.5)}%`,
+                          }}
+                        />
+                      </div>
+                      <span className="text-xs text-surface-400 w-14 text-right tabular-nums">
+                        {b.count.toLocaleString()}
+                      </span>
+                      <span className="text-xs text-cyan-400 w-12 text-right tabular-nums font-medium">
+                        {b.percentage}%
+                      </span>
+                    </div>
+                  ))}
                 </div>
               )}
             </div>

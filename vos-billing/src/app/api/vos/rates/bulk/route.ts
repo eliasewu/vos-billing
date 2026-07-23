@@ -4,58 +4,46 @@ import { verifySession } from "@/lib/auth";
 
 export async function POST(request: NextRequest) {
   const user = await verifySession();
-  if (!user) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  }
+  if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
   try {
     const body = await request.json();
     const { feerategroup_id, rates } = body;
 
-    if (!feerategroup_id || !Array.isArray(rates) || rates.length === 0) {
-      return NextResponse.json({ error: "Group ID and non-empty rates array are required" }, { status: 400 });
+    if (!feerategroup_id) return NextResponse.json({ error: "Rate group ID required" }, { status: 400 });
+    if (!rates || !Array.isArray(rates) || rates.length === 0) {
+      return NextResponse.json({ error: "Rates array required" }, { status: 400 });
     }
 
-    if (rates.length > 500) {
-      return NextResponse.json({ error: "Maximum 500 rates per import" }, { status: 400 });
-    }
-
-    let inserted = 0;
+    let succeeded = 0;
     const errors: string[] = [];
 
-    for (const rate of rates) {
-      if (!rate.prefix) {
-        errors.push(`Row skipped: missing prefix`);
-        continue;
-      }
+    for (const r of rates) {
+      if (r.prefix === undefined || r.prefix === null) { errors.push("Missing prefix"); continue; }
       try {
         await executeVos(
-          `INSERT INTO e_feerate (feerategroup_id, feeprefix, areacode, fee, tax, period, type, locktype)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+          `INSERT INTO e_feerate (feerategroup_id, feeprefix, areacode, locktype, fee, tax, period, ivrfee, ivrperiod, type)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
           [
-            feerategroup_id,
-            rate.prefix,
-            rate.areacode || null,
-            parseFloat(rate.fee) || 0,
-            parseFloat(rate.tax) || 0,
-            parseInt(rate.period) || 60,
-            parseInt(rate.type) || 0,
-            parseInt(rate.locktype) || 0,
+            Number(feerategroup_id), String(r.prefix), String(r.areacode || ""),
+            Number(r.locktype) || 0, Number(r.fee) || 0, Number(r.tax) || 0,
+            Number(r.period) || 0, Number(r.ivrfee) || 0, Number(r.ivrperiod) || 0,
+            Number(r.type) || 0,
           ]
         );
-        inserted++;
-      } catch (e: any) {
-        errors.push(`Prefix "${rate.prefix}": ${e?.message || "Failed"}`);
+        succeeded++;
+      } catch (e) {
+        errors.push(`${r.prefix}: ${e instanceof Error ? e.message : "Failed"}`);
       }
     }
 
     return NextResponse.json({
       success: true,
-      inserted,
-      total: rates.length,
-      errors: errors.length > 0 ? errors : undefined,
+      succeeded,
+      failed: rates.length - succeeded,
+      errors: errors.slice(0, 5),
     });
-  } catch (e: any) {
-    return NextResponse.json({ error: e?.message || "Bulk import failed" }, { status: 500 });
+  } catch (error) {
+    return NextResponse.json({ error: error instanceof Error ? error.message : "Bulk insert failed" }, { status: 500 });
   }
 }

@@ -1,7 +1,8 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { Route, Search, RefreshCw, GitBranch, Plus, Edit2, Trash2, X } from "lucide-react";
+import { Route, RefreshCw, GitBranch, Plus, Edit2, Trash2, X } from "lucide-react";
+import DataTable, { type Column } from "@/components/DataTable";
 
 interface VRoute { id: number; prefix: string; routeName: string; gatewayId: number; gatewayName: string | null; priority: number; rewritePrefix: string; stripDigits: number; prependDigits: string; status: number; memo: string; }
 
@@ -9,7 +10,6 @@ export default function RouteManagementPage() {
   const [routes, setRoutes] = useState<VRoute[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
-  const [search, setSearch] = useState("");
   const [showModal, setShowModal] = useState(false);
   const [editingRoute, setEditingRoute] = useState<VRoute | null>(null);
   const [saving, setSaving] = useState(false);
@@ -26,7 +26,6 @@ export default function RouteManagementPage() {
   const handleSave = async () => {
     setSaving(true);
     try {
-      // Note: API supports POST/DELETE only; for edits, delete+recreate
       if (editingRoute) { await fetch(`/api/vos/routes?id=${editingRoute.id}`, { method: "DELETE" }); }
       await fetch("/api/vos/routes", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(form) });
       setShowModal(false); setEditingRoute(null); fetchRoutes();
@@ -42,7 +41,21 @@ export default function RouteManagementPage() {
   const openEdit = (r:VRoute) => { setEditingRoute(r); setForm({ prefix:r.prefix,routeName:r.routeName,gatewayId:r.gatewayId,priority:r.priority,rewritePrefix:r.rewritePrefix||"",stripDigits:r.stripDigits||0,prependDigits:r.prependDigits||"",status:r.status,memo:r.memo||"" }); setShowModal(true); };
   const openAdd = () => { setEditingRoute(null); setForm({ prefix:"",routeName:"",gatewayId:0,priority:0,rewritePrefix:"",stripDigits:0,prependDigits:"",status:0,memo:"" }); setShowModal(true); };
 
-  const filtered = routes.filter(r=>r.prefix.includes(search)||r.routeName.toLowerCase().includes(search.toLowerCase())||(r.gatewayName||"").toLowerCase().includes(search.toLowerCase()));
+  const columns: Column<VRoute>[] = [
+    { key: "prefix", label: "Prefix", render: (r) => <span className="text-surface-50 font-mono font-medium text-xs">{r.prefix||"—"}</span> },
+    { key: "routeName", label: "Route Name", render: (r) => r.routeName || "—" },
+    { key: "gateway", label: "Gateway", render: (r) => r.gatewayName || `GW #${r.gatewayId}` },
+    { key: "priority", label: "Priority", textAlign: "right" },
+    { key: "status", label: "Status", textAlign: "center", render: (r) => (
+      <span className={`inline-flex px-2 py-0.5 rounded-full text-xs font-medium ${r.status===0?"bg-emerald-500/10 text-emerald-400":"bg-red-500/10 text-red-400"}`}>{r.status===0?"Active":"Inactive"}</span>
+    )},
+    { key: "actions", label: "Actions", textAlign: "center", width: "96px", render: (r) => (
+      <div className="flex items-center justify-center gap-1">
+        <button onClick={()=>openEdit(r)} className="p-1.5 rounded hover:bg-surface-700 text-surface-400 hover:text-surface-50"><Edit2 className="w-3.5 h-3.5"/></button>
+        <button onClick={()=>handleDelete(r.id)} className="p-1.5 rounded hover:bg-red-500/10 text-surface-400 hover:text-red-400"><Trash2 className="w-3.5 h-3.5"/></button>
+      </div>
+    )},
+  ];
 
   return (<div className="p-6 space-y-6">
     <div className="flex items-center justify-between"><div><h1 className="text-2xl font-bold text-surface-50">Route Management</h1><p className="text-surface-400 text-sm mt-1">{routes.length} routes</p></div>
@@ -55,25 +68,17 @@ export default function RouteManagementPage() {
       <div className="bg-surface-900 border border-surface-700/50 rounded-xl p-4"><p className="text-xs text-surface-500 mb-1">Prefixes</p><p className="text-2xl font-bold text-amber-400">{new Set(routes.map(r=>r.prefix).filter(Boolean)).size}</p></div>
     </div>
 
-    <div className="relative max-w-md"><Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-surface-500"/><input type="text" placeholder="Search by prefix, name, or gateway..." value={search} onChange={e=>setSearch(e.target.value)} className="w-full pl-10 pr-4 py-2.5 bg-surface-900 border border-surface-700/50 rounded-lg text-surface-50 text-sm placeholder:text-surface-600 focus:outline-none focus:border-brand-500/50"/></div>
-
     {error&&<div className="p-4 rounded-xl bg-red-500/10 border border-red-500/20 text-red-400 text-sm">{error}</div>}
 
-    <div className="bg-surface-900 border border-surface-700/50 rounded-xl overflow-hidden">
-      <div className="overflow-x-auto"><table className="w-full text-sm">
-        <thead><tr className="border-b border-surface-800">
-          <th className="text-left px-4 py-3 text-surface-400 text-xs uppercase">Prefix</th><th className="text-left px-4 py-3 text-surface-400 text-xs uppercase">Route Name</th>
-          <th className="text-left px-4 py-3 text-surface-400 text-xs uppercase">Gateway</th><th className="text-right px-4 py-3 text-surface-400 text-xs uppercase">Priority</th>
-          <th className="text-center px-4 py-3 text-surface-400 text-xs uppercase">Status</th><th className="text-center px-4 py-3 text-surface-400 text-xs uppercase w-24">Actions</th>
-        </tr></thead>
-        <tbody>{loading?Array.from({length:5}).map((_,i)=><tr key={i} className="border-b border-surface-800/50">{Array.from({length:6}).map((_,j)=><td key={j} className="px-4 py-3"><div className="h-4 bg-surface-800 rounded animate-pulse"/></td>)}</tr>):filtered.length===0?<tr><td colSpan={6} className="px-4 py-12 text-center text-surface-500"><Route className="w-10 h-10 mx-auto mb-2 text-surface-600"/><p>No routes found</p></td></tr>:filtered.map(r=><tr key={r.id} className="border-b border-surface-800/50 hover:bg-surface-800/30">
-          <td className="px-4 py-3 text-surface-50 font-mono font-medium text-xs">{r.prefix||"—"}</td><td className="px-4 py-3 text-surface-300 text-xs">{r.routeName||"—"}</td>
-          <td className="px-4 py-3 text-surface-300 text-xs">{r.gatewayName||`GW #${r.gatewayId}`}</td><td className="px-4 py-3 text-right text-surface-300">{r.priority}</td>
-          <td className="px-4 py-3 text-center"><span className={`inline-flex px-2 py-0.5 rounded-full text-xs font-medium ${r.status===0?"bg-emerald-500/10 text-emerald-400":"bg-red-500/10 text-red-400"}`}>{r.status===0?"Active":"Inactive"}</span></td>
-          <td className="px-4 py-3 text-center"><div className="flex items-center justify-center gap-1"><button onClick={()=>openEdit(r)} className="p-1.5 rounded hover:bg-surface-700 text-surface-400 hover:text-surface-50"><Edit2 className="w-3.5 h-3.5"/></button><button onClick={()=>handleDelete(r.id)} className="p-1.5 rounded hover:bg-red-500/10 text-surface-400 hover:text-red-400"><Trash2 className="w-3.5 h-3.5"/></button></div></td>
-        </tr>)}</tbody>
-      </table></div>
-    </div>
+    <DataTable
+      columns={columns}
+      data={routes}
+      searchKey="prefix"
+      loading={loading}
+      emptyMessage="No routes found"
+      emptyIcon={<Route className="w-10 h-10 text-surface-600" />}
+      pageSize={20}
+    />
 
     {showModal&&(<div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm"><div className="bg-surface-900 border border-surface-700 rounded-2xl w-full max-w-md mx-4 max-h-[90vh] overflow-y-auto">
       <div className="flex items-center justify-between px-6 py-4 border-b border-surface-800"><h2 className="text-lg font-semibold text-surface-50">{editingRoute?"Edit Route":"Add Route"}</h2><button onClick={()=>setShowModal(false)} className="p-1.5 rounded-lg hover:bg-surface-800 text-surface-500 hover:text-surface-50"><X className="w-5 h-5"/></button></div>

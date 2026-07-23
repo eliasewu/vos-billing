@@ -1,7 +1,8 @@
 "use client";
 
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState, useCallback, useMemo } from "react";
 import { DollarSign, ChevronDown, ChevronRight, RefreshCw, Shield, Edit3, Save, X, Settings2, Plus, Trash2, Zap, Loader2 } from "lucide-react";
+import { safeErrorString } from "@/lib/utils";
 
 interface RateGroup {
   id: number;
@@ -64,12 +65,35 @@ export default function RatesPage() {
   const [deletingId, setDeletingId] = useState<number | null>(null);
   const [applying, setApplying] = useState(false);
   const [success, setSuccess] = useState("");
+
+  // Areacode lookup for prefix → area code auto-fill
+  const [areacodes, setAreacodes] = useState<{ areacode: string; location: string }[]>([]);
+  useEffect(() => {
+    fetch("/api/vos/areacodes").then(r => r.json()).then(d => setAreacodes(d.areacodes || [])).catch(() => {});
+  }, []);
+
+  const areacodeSet = useMemo(() => {
+    const s = new Set<string>();
+    for (const a of areacodes) if (a.areacode) s.add(a.areacode);
+    return s;
+  }, [areacodes]);
+  const areacodeToName = useMemo(() => {
+    const m = new Map<string, string>();
+    for (const a of areacodes) if (a.areacode && a.location) m.set(a.areacode, a.location);
+    return m;
+  }, [areacodes]);
+  const lookupPrefix = (prefix: string): { areacode: string; areaName: string } => {
+    const p = prefix.trim();
+    const name = areacodeToName.get(p);
+    return name ? { areacode: p, areaName: name } : { areacode: "", areaName: "" };
+  };
+
   const fetchGroups = useCallback(async () => {
     setLoading(true);
     try {
       const res = await fetch("/api/vos/rates");
       const data = await res.json();
-      if (data.error) setError(data.error);
+      if (data.error) setError(safeErrorString(data.error));
       else setGroups(data.rateGroups || []);
     } catch {
       setError("Failed to fetch rate groups");
@@ -83,7 +107,7 @@ export default function RatesPage() {
     try {
       const res = await fetch(`/api/vos/rates?group_id=${groupId}`);
       const data = await res.json();
-      if (data.error) setError(data.error);
+      if (data.error) setError(safeErrorString(data.error));
       else setRates(data.rates || []);
     } catch {
       setError("Failed to fetch rates");
@@ -113,7 +137,7 @@ export default function RatesPage() {
       });
       const data = await res.json();
       if (data.error) {
-        setError(data.error);
+        setError(safeErrorString(data.error));
       } else {
         setEditingRate(null);
         setEditForm({});
@@ -144,7 +168,7 @@ export default function RatesPage() {
       });
       const data = await res.json();
       if (data.error) {
-        setError(data.error);
+        setError(safeErrorString(data.error));
       } else {
         setEditingGroup(null);
         setGroupForm({});
@@ -178,7 +202,7 @@ export default function RatesPage() {
         body: JSON.stringify({ feerategroup_id: expandedGroup, ...addForm }),
       });
       const data = await res.json();
-      if (data.error) { setError(data.error); }
+      if (data.error) { setError(safeErrorString(data.error)); }
       else {
         setShowAddModal(false);
         setAddForm({ prefix: "", areacode: "", fee: 0, tax: 0, period: 6, fakeminute: 60, ivrfee: 0, ivrperiod: 0, type: 0, locktype: 0 });
@@ -195,7 +219,7 @@ export default function RatesPage() {
     try {
       const res = await fetch("/api/vos/rates/apply", { method: "POST" });
       const data = await res.json();
-      if (data.error) setError(data.error);
+      if (data.error) setError(safeErrorString(data.error));
       else {
         const msg = data.message || "Rates applied successfully";
         setSuccess(msg);
@@ -210,7 +234,7 @@ export default function RatesPage() {
     try {
       const res = await fetch(`/api/vos/rates?id=${id}`, { method: "DELETE" });
       const data = await res.json();
-      if (data.error) { setError(data.error); }
+      if (data.error) { setError(safeErrorString(data.error)); }
       else {
         setDeletingId(null);
         if (expandedGroup) fetchRates(expandedGroup);
@@ -375,8 +399,7 @@ export default function RatesPage() {
                           <tr className="bg-surface-800/30 border-b border-surface-700/50">
                             <th className="px-3 py-2.5 text-left text-[11px] font-semibold uppercase text-surface-400">#</th>
                             <th className="px-3 py-2.5 text-left text-[11px] font-semibold uppercase text-surface-400">Prefix</th>
-                            <th className="px-3 py-2.5 text-left text-[11px] font-semibold uppercase text-surface-400">Area Code</th>
-                            <th className="px-3 py-2.5 text-left text-[11px] font-semibold uppercase text-surface-400">Area Name</th>
+                            <th className="px-3 py-2.5 text-left text-[11px] font-semibold uppercase text-surface-400">Area Code / Name</th>
                             <th className="px-3 py-2.5 text-right text-[11px] font-semibold uppercase text-surface-400">Rate ($/min)</th>
                             <th className="px-3 py-2.5 text-right text-[11px] font-semibold uppercase text-surface-400">Tax</th>
                             <th className="px-3 py-2.5 text-center text-[11px] font-semibold uppercase text-surface-400">Cycle / Inc</th>
@@ -396,11 +419,17 @@ export default function RatesPage() {
                               <td className="px-3 py-2.5 font-mono text-emerald-400 font-medium text-xs">
                                 {r.prefix}
                               </td>
-                              <td className="px-3 py-2.5 font-mono text-surface-300 text-xs">
-                                {r.areacode || "—"}
-                              </td>
-                              <td className="px-3 py-2.5 text-surface-300 text-xs">
-                                {r.area_name || "—"}
+                              <td className="px-3 py-2.5 text-xs">
+                                {r.areacode || r.area_name ? (
+                                  <div className="flex flex-col gap-0.5">
+                                    <span className={`font-mono font-medium ${r.areacode && r.areacode.length > 3 ? "text-violet-400" : "text-surface-300"}`}>
+                                      {r.areacode || "—"}
+                                    </span>
+                                    <span className="text-surface-500 text-[10px] leading-tight">{r.area_name || "—"}</span>
+                                  </div>
+                                ) : (
+                                  <span className="text-surface-600">—</span>
+                                )}
                               </td>
                               <td className="px-3 py-2.5 font-mono text-surface-50 text-right text-xs">
                                 ${Number(r.fee).toFixed(6)}
@@ -519,7 +548,11 @@ export default function RatesPage() {
                   <input
                     type="text"
                     value={editForm.prefix || ""}
-                    onChange={(e) => setEditForm({ ...editForm, prefix: e.target.value })}
+                    onChange={(e) => {
+                      const val = e.target.value;
+                      const looked = lookupPrefix(val);
+                      setEditForm({ ...editForm, prefix: val, areacode: looked.areacode || (editForm.areacode || "") });
+                    }}
                     className="w-full px-3 py-2 bg-surface-800 border border-surface-700 rounded-lg text-sm text-surface-50 focus:outline-none focus:border-cyan-500"
                   />
                 </div>
@@ -530,6 +563,7 @@ export default function RatesPage() {
                     value={editForm.areacode || ""}
                     onChange={(e) => setEditForm({ ...editForm, areacode: e.target.value })}
                     className="w-full px-3 py-2 bg-surface-800 border border-surface-700 rounded-lg text-sm text-surface-50 focus:outline-none focus:border-cyan-500"
+                    title={areacodeToName.get(editForm.areacode || "") || ""}
                   />
                 </div>
               </div>
@@ -787,13 +821,19 @@ export default function RatesPage() {
               <div className="grid grid-cols-2 gap-4">
                 <div>
                   <label className="block text-xs text-surface-400 mb-1">Prefix *</label>
-                  <input type="text" value={addForm.prefix} onChange={(e) => setAddForm({...addForm, prefix: e.target.value})}
+                  <input type="text" value={addForm.prefix}
+                    onChange={(e) => {
+                      const val = e.target.value;
+                      const looked = lookupPrefix(val);
+                      setAddForm({...addForm, prefix: val, areacode: looked.areacode || addForm.areacode});
+                    }}
                     className="w-full px-3 py-2 bg-surface-800 border border-surface-700 rounded-lg text-sm text-surface-50 focus:outline-none focus:border-emerald-500" />
                 </div>
                 <div>
                   <label className="block text-xs text-surface-400 mb-1">Area Code</label>
                   <input type="text" value={addForm.areacode} onChange={(e) => setAddForm({...addForm, areacode: e.target.value})}
-                    className="w-full px-3 py-2 bg-surface-800 border border-surface-700 rounded-lg text-sm text-surface-50 focus:outline-none focus:border-emerald-500" />
+                    className="w-full px-3 py-2 bg-surface-800 border border-surface-700 rounded-lg text-sm text-surface-50 focus:outline-none focus:border-emerald-500"
+                    title={areacodeToName.get(addForm.areacode) || ""} />
                 </div>
               </div>
               <div className="grid grid-cols-2 gap-4">

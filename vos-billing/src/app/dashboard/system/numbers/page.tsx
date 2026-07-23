@@ -1,7 +1,8 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { Hash, Search, RefreshCw, MapPin, Plus, Edit2, Trash2, X } from "lucide-react";
+import { Hash, RefreshCw, MapPin, Plus, Edit2, Trash2, X } from "lucide-react";
+import DataTable, { type Column } from "@/components/DataTable";
 
 interface VNumber { id: number; e164: string; areacode: string; location: string; carrier: string; memo: string; }
 
@@ -9,7 +10,6 @@ export default function NumberManagementPage() {
   const [numbers, setNumbers] = useState<VNumber[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
-  const [search, setSearch] = useState("");
   const [showModal, setShowModal] = useState(false);
   const [editingNum, setEditingNum] = useState<VNumber | null>(null);
   const [saving, setSaving] = useState(false);
@@ -26,7 +26,6 @@ export default function NumberManagementPage() {
   const handleSave = async () => {
     setSaving(true);
     try {
-      // Note: API supports POST/DELETE only; for edits, delete+recreate
       if (editingNum) { await fetch(`/api/vos/numbers?id=${editingNum.id}`, { method: "DELETE" }); }
       await fetch("/api/vos/numbers", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(form) });
       setShowModal(false); setEditingNum(null); fetchNumbers();
@@ -42,7 +41,19 @@ export default function NumberManagementPage() {
   const openEdit = (n:VNumber) => { setEditingNum(n); setForm({ e164:n.e164,areacode:n.areacode||"",location:n.location||"",carrier:n.carrier||"",memo:n.memo||"" }); setShowModal(true); };
   const openAdd = () => { setEditingNum(null); setForm({ e164:"",areacode:"",location:"",carrier:"",memo:"" }); setShowModal(true); };
 
-  const filtered = numbers.filter(n=>n.e164.includes(search)||n.location.toLowerCase().includes(search.toLowerCase())||n.carrier.toLowerCase().includes(search.toLowerCase()));
+  const columns: Column<VNumber>[] = [
+    { key: "e164", label: "E164", cellClassName: "text-surface-50 font-mono font-medium text-xs" },
+    { key: "areacode", label: "Area Code", render: (n) => n.areacode || "—" },
+    { key: "location", label: "Location", render: (n) => n.location ? <span className="flex items-center gap-1"><MapPin className="w-3 h-3 text-surface-500"/>{n.location}</span> : "—" },
+    { key: "carrier", label: "Carrier", render: (n) => n.carrier || "—" },
+    { key: "memo", label: "Memo", render: (n) => <span className="max-w-[200px] truncate block" title={n.memo||""}>{n.memo || "—"}</span>, cellClassName: "text-surface-400" },
+    { key: "actions", label: "Actions", textAlign: "center", width: "96px", render: (n) => (
+      <div className="flex items-center justify-center gap-1">
+        <button onClick={()=>openEdit(n)} className="p-1.5 rounded hover:bg-surface-700 text-surface-400 hover:text-surface-50"><Edit2 className="w-3.5 h-3.5"/></button>
+        <button onClick={()=>handleDelete(n.id)} className="p-1.5 rounded hover:bg-red-500/10 text-surface-400 hover:text-red-400"><Trash2 className="w-3.5 h-3.5"/></button>
+      </div>
+    )},
+  ];
 
   return (<div className="p-6 space-y-6">
     <div className="flex items-center justify-between"><div><h1 className="text-2xl font-bold text-surface-50">Number Management</h1><p className="text-surface-400 text-sm mt-1">{numbers.length} numbers</p></div>
@@ -55,25 +66,17 @@ export default function NumberManagementPage() {
       <div className="bg-surface-900 border border-surface-700/50 rounded-xl p-4"><p className="text-xs text-surface-500 mb-1">Area Codes</p><p className="text-2xl font-bold text-amber-400">{new Set(numbers.map(n=>n.areacode).filter(Boolean)).size}</p></div>
     </div>
 
-    <div className="relative max-w-md"><Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-surface-500"/><input type="text" placeholder="Search by number, location, or carrier..." value={search} onChange={e=>setSearch(e.target.value)} className="w-full pl-10 pr-4 py-2.5 bg-surface-900 border border-surface-700/50 rounded-lg text-surface-50 text-sm placeholder:text-surface-600 focus:outline-none focus:border-brand-500/50"/></div>
-
     {error&&<div className="p-4 rounded-xl bg-red-500/10 border border-red-500/20 text-red-400 text-sm">{error}</div>}
 
-    <div className="bg-surface-900 border border-surface-700/50 rounded-xl overflow-hidden">
-      <div className="overflow-x-auto"><table className="w-full text-sm">
-        <thead><tr className="border-b border-surface-800">
-          <th className="text-left px-4 py-3 text-surface-400 text-xs uppercase">E164</th><th className="text-left px-4 py-3 text-surface-400 text-xs uppercase">Area Code</th>
-          <th className="text-left px-4 py-3 text-surface-400 text-xs uppercase">Location</th><th className="text-left px-4 py-3 text-surface-400 text-xs uppercase">Carrier</th>
-          <th className="text-left px-4 py-3 text-surface-400 text-xs uppercase">Memo</th><th className="text-center px-4 py-3 text-surface-400 text-xs uppercase w-24">Actions</th>
-        </tr></thead>
-        <tbody>{loading?Array.from({length:5}).map((_,i)=><tr key={i} className="border-b border-surface-800/50">{Array.from({length:6}).map((_,j)=><td key={j} className="px-4 py-3"><div className="h-4 bg-surface-800 rounded animate-pulse"/></td>)}</tr>):filtered.length===0?<tr><td colSpan={6} className="px-4 py-12 text-center text-surface-500"><Hash className="w-10 h-10 mx-auto mb-2 text-surface-600"/><p>No numbers found</p></td></tr>:filtered.map(n=><tr key={n.id} className="border-b border-surface-800/50 hover:bg-surface-800/30">
-          <td className="px-4 py-3 text-surface-50 font-mono font-medium text-xs">{n.e164}</td><td className="px-4 py-3 text-surface-300 text-xs">{n.areacode||"—"}</td>
-          <td className="px-4 py-3 text-surface-300 text-xs flex items-center gap-1"><MapPin className="w-3 h-3 text-surface-500"/>{n.location||"—"}</td>
-          <td className="px-4 py-3 text-surface-300 text-xs">{n.carrier||"—"}</td><td className="px-4 py-3 text-surface-400 text-xs max-w-[200px] truncate">{n.memo||"—"}</td>
-          <td className="px-4 py-3 text-center"><div className="flex items-center justify-center gap-1"><button onClick={()=>openEdit(n)} className="p-1.5 rounded hover:bg-surface-700 text-surface-400 hover:text-surface-50"><Edit2 className="w-3.5 h-3.5"/></button><button onClick={()=>handleDelete(n.id)} className="p-1.5 rounded hover:bg-red-500/10 text-surface-400 hover:text-red-400"><Trash2 className="w-3.5 h-3.5"/></button></div></td>
-        </tr>)}</tbody>
-      </table></div>
-    </div>
+    <DataTable
+      columns={columns}
+      data={numbers}
+      searchKey="e164"
+      loading={loading}
+      emptyMessage="No numbers found"
+      emptyIcon={<Hash className="w-10 h-10 text-surface-600" />}
+      pageSize={20}
+    />
 
     {showModal&&(<div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm"><div className="bg-surface-900 border border-surface-700 rounded-2xl w-full max-w-md mx-4">
       <div className="flex items-center justify-between px-6 py-4 border-b border-surface-800"><h2 className="text-lg font-semibold text-surface-50">{editingNum?"Edit Number":"Add Number"}</h2><button onClick={()=>setShowModal(false)} className="p-1.5 rounded-lg hover:bg-surface-800 text-surface-500 hover:text-surface-50"><X className="w-5 h-5"/></button></div>

@@ -1,36 +1,15 @@
 import { NextRequest, NextResponse } from "next/server";
 import { queryVos } from "@/lib/vos-db";
 import { verifySession } from "@/lib/auth";
-
-function datePartition(d: Date): string {
-  return "e_cdr_" + d.getFullYear() + String(d.getMonth() + 1).padStart(2, "0") + String(d.getDate()).padStart(2, "0");
-}
-
-function lastNDays(n: number): string[] {
-  const parts: string[] = [];
-  for (let i = 0; i < n; i++) {
-    const d = new Date();
-    d.setDate(d.getDate() - i);
-    parts.push(datePartition(d));
-  }
-  return parts;
-}
+import { cdrPartitionsForLastNDays, findExistingCdrPartitions } from "@/lib/vos-utils";
 
 export async function GET(_request: NextRequest) {
   const user = await verifySession();
   if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
   try {
-    const partitions = lastNDays(30);
-
-    // Find existing partitions
-    const tables: string[] = [];
-    for (const tbl of partitions) {
-      try {
-        await queryVos(`SELECT 1 FROM ${tbl} LIMIT 1`);
-        tables.push(tbl);
-      } catch { continue; }
-    }
+    const partitions = cdrPartitionsForLastNDays(30);
+    const tables = await findExistingCdrPartitions(queryVos, partitions);
 
     // Supplier payouts: group by routing gateway and clearing customer
     const supplierMap = new Map<number, {

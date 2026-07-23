@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { queryVos, executeVos } from "@/lib/vos-db";
 import { verifySession } from "@/lib/auth";
+import { sendRateChangeEmail } from "@/lib/email";
 
 // ─── GET: List rate groups or rates within a group ───
 
@@ -149,9 +150,61 @@ export async function PUT(request: NextRequest) {
     for (const [col,key] of Object.entries(fields)) {
       if (body[key] !== undefined) { updates.push(`${col}=?`); values.push(body[key]); }
     }
+    // Fetch old rate before update (for % change calculation)
+    let oldFee: number | null = null;
+    let oldPrefix = "";
+    let oldAreacode = "";
+    let oldGroupId = 0;
+    try {
+      const [oldRow] = await queryVos<any>(
+        "SELECT feeprefix, areacode, fee, feerategroup_id FROM e_feerate WHERE id = ?", [Number(id)]
+      );
+      if (oldRow) {
+        oldFee = Number((oldRow as any).fee) || 0;
+        oldPrefix = String((oldRow as any).feeprefix || "");
+        oldAreacode = String((oldRow as any).areacode || "");
+        oldGroupId = Number((oldRow as any).feerategroup_id) || 0;
+      }
+    } catch { /* proceed without old data */ }
+
     if (!updates.length) return NextResponse.json({ error:"No fields" }, { status:400 });
     values.push(Number(id));
     await executeVos(`UPDATE e_feerate SET ${updates.join(",")} WHERE id=?`, values);
+
+    // ─── Auto-notify customers of rate change (fire-and-forget) ───
+    void (async () => {
+      try {
+        const newFee = body.fee !== undefined ? Number(body.fee) : oldFee || 0;
+        const newPrefix = body.prefix !== undefined ? String(body.prefix) : oldPrefix;
+        const newAreacode = body.areacode !== undefined ? String(body.areacode) : oldAreacode;
+        const groupId = body.feerategroup_id !== undefined ? Number(body.feerategroup_id) : oldGroupId;
+
+        // Only notify if rate fee actually changed (not on prefix/areacode edits)
+        const feeChanged = body.fee !== undefined && oldFee !== null && Number(body.fee) !== oldFee;
+        if (!feeChanged) return;
+
+        const [grp] = await queryVos<any>("SELECT name FROM e_feerategroup WHERE id = ?", [groupId]);
+        const groupName = (grp as any)?.name || `Group #${groupId}`;
+        const safeOld = oldFee as number;
+        const pct = safeOld !== 0
+          ? ((newFee - safeOld) / safeOld) * 100 : null;
+
+        const customers = await queryVos<any>(
+          "SELECT name, alarmemail FROM e_customer WHERE feerategroup_id = ? AND alarmemail != ''", [groupId]
+        ) as any[];
+
+        // Parallel sends for multiple customers
+        await Promise.all(
+          customers.filter((c: any) => c.alarmemail).map((c: any) =>
+            sendRateChangeEmail(c.alarmemail, c.name || "Customer", groupName, [{
+              prefix: newPrefix, areacode: newAreacode, areaName: "",
+              oldFee, newFee, percentChange: pct, action: "updated",
+            }])
+          )
+        );
+      } catch (e) { console.error("[RateEmail] Failed to send rate-change notification:", e); }
+    })();
+
     return NextResponse.json({ success:true, id, updated:updates.length });
   } catch (error) {
     const msg = error instanceof Error ? error.message : "Unknown error";
@@ -181,6 +234,25 @@ export async function POST(request: NextRequest) {
         Number(ivrfee)||0, Number(ivrperiod)||0, Number(type)||0,
       ]
     );
+
+    // ─── Auto-notify customers using this rate group (fire-and-forget) ───
+    void (async () => {
+      try {
+        const [grp] = await queryVos<any>("SELECT name FROM e_feerategroup WHERE id = ?", [Number(feerategroup_id)]);
+        const groupName = (grp as any)?.name || `Group #${feerategroup_id}`;
+        const customers = await queryVos<any>(
+          "SELECT name, alarmemail FROM e_customer WHERE feerategroup_id = ? AND alarmemail != ''", [Number(feerategroup_id)]
+        ) as any[];
+        await Promise.all(
+          customers.filter((c: any) => c.alarmemail).map((c: any) =>
+            sendRateChangeEmail(c.alarmemail, c.name || "Customer", groupName, [{
+              prefix: String(prefix), areacode: String(areacode||""), areaName: "",
+              oldFee: null, newFee: Number(fee)||0, percentChange: null, action: "added",
+            }])
+          )
+        );
+      } catch (e) { console.error("[RateEmail] Failed to send new-rate notification:", e); }
+    })();
 
     return NextResponse.json({
       success: true,

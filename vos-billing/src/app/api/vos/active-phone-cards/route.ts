@@ -6,13 +6,33 @@ export async function GET() {
   const user = await verifySession();
   if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   try {
-    // Query active phone card sessions from e_activecard or e_phonecard with sold=0
-    // VOS3000 tracks active sessions in e_activecard; fall back to e_phonecard where sold=0
+    // Query active phone card sessions from e_activephonecard
+    // Falls back to e_phonecard where sold=0 if the table doesn't exist
     let rows: any[];
     try {
       rows = await queryVos<any>(
-        "SELECT id, pin, displaye164, activetime, bindlimit, money, limitmoney, usedaccount, usedaccountname, sold, locktype FROM e_activecard ORDER BY activetime DESC LIMIT 500"
+        `SELECT a.id, a.pin, a.displaye164, a.activetime, a.bindlimit, a.locktype, a.customer_id,
+          c.name AS customer_name, c.account AS customer_account
+        FROM e_activephonecard a
+        LEFT JOIN e_customer c ON a.customer_id = c.id
+        ORDER BY a.activetime DESC LIMIT 500`
       );
+      // e_activephonecard doesn't have money/limitmoney — use 0 (balance tracked in e_phonecard)
+      const cards = (rows as any[]).map(r => ({
+        id: r.id, pin: r.pin || "", displaye164: r.displaye164 || "",
+        activetime: r.activetime || "", bindlimit: Number(r.bindlimit) || 0,
+        money: 0, limitmoney: 0,
+        usedaccount: r.customer_account || "", usedaccountname: r.customer_name || "",
+        sold: 0, locktype: r.locktype ?? 0,
+      }));
+      return NextResponse.json({
+        cards,
+        summary: {
+          total: cards.length,
+          totalMoney: 0,
+          uniqueCustomers: new Set(cards.map(c => c.usedaccount).filter(Boolean)).size,
+        },
+      });
     } catch {
       // Fallback: query e_phonecard for active (unsold) cards
       rows = await queryVos<any>(
@@ -52,8 +72,8 @@ export async function DELETE(request: NextRequest) {
   try {
     const id = request.nextUrl.searchParams.get("id");
     if (!id) return NextResponse.json({ error: "ID required" }, { status: 400 });
-    // Disconnect by setting locktype=1 or deleting
-    await executeVos("UPDATE e_activecard SET locktype = 1 WHERE id = ?", [id]);
+    // Delete or lock the active session
+    await executeVos("DELETE FROM e_activephonecard WHERE id = ?", [id]);
     return NextResponse.json({ success: true });
   } catch(e) {
     return NextResponse.json({ error: e instanceof Error ? e.message : "Failed" }, { status: 500 });

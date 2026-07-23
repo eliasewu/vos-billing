@@ -1,7 +1,8 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { Settings, RefreshCw, Search, Edit2, X, Check, Loader2, Download } from "lucide-react";
+import { Settings, RefreshCw, Edit2, X, Check, Loader2, Download, Mail, Send } from "lucide-react";
+import DataTable from "@/components/DataTable";
 
 interface SysParam { id: number; name: string; value: string; type: string; memo: string; }
 
@@ -10,10 +11,14 @@ export default function SystemParametersPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
-  const [search, setSearch] = useState("");
   const [editingId, setEditingId] = useState<number | null>(null);
   const [editValue, setEditValue] = useState("");
   const [saving, setSaving] = useState(false);
+
+  // Test email state
+  const [testEmail, setTestEmail] = useState("");
+  const [sending, setSending] = useState(false);
+  const [testResult, setTestResult] = useState<{ success: boolean; message: string } | null>(null);
 
   const fetchParams = async () => {
     setLoading(true); setError("");
@@ -43,12 +48,13 @@ export default function SystemParametersPage() {
   };
 
   const handleApply = async () => {
-    setSuccess("Parameters applied — changes saved to database");
+    setSuccess("Parameters refreshed — reloaded from database");
+    fetchParams();
   };
 
   const exportCSV = () => {
     const rows = ["Name,Value,Type,Memo"];
-    filtered.forEach(p => rows.push(`"${p.name}","${p.value}","${p.type}","${p.memo || ""}"`));
+    params.forEach(p => rows.push(`"${p.name}","${p.value}","${p.type}","${p.memo || ""}"`));
     const blob = new Blob([rows.join("\n")], { type: "text/csv" });
     const a = document.createElement("a"); a.href = URL.createObjectURL(blob);
     a.download = "system_params.csv"; a.click();
@@ -57,10 +63,20 @@ export default function SystemParametersPage() {
   const startEdit = (p: SysParam) => { setEditingId(p.id); setEditValue(p.value); };
   const cancelEdit = () => { setEditingId(null); setEditValue(""); };
 
-  const filtered = params.filter(p =>
-    !search || p.name.toLowerCase().includes(search.toLowerCase()) ||
-    (p.memo || "").toLowerCase().includes(search.toLowerCase())
-  );
+  const sendTestEmail = async () => {
+    if (!testEmail.trim()) return;
+    setSending(true); setTestResult(null);
+    try {
+      const res = await fetch("/api/vos/email/test", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ to: testEmail.trim() }),
+      });
+      const data = await res.json();
+      setTestResult(data);
+    } catch {
+      setTestResult({ success: false, message: "Network error — failed to send test email" });
+    } finally { setSending(false); }
+  };
 
   return (
     <div className="p-6 space-y-6">
@@ -87,61 +103,82 @@ export default function SystemParametersPage() {
       {error && <div className="p-4 rounded-xl bg-red-500/10 border border-red-500/20 text-red-400 text-sm flex items-center gap-2"><button onClick={() => setError("")} className="p-0.5 hover:text-red-300"><X className="w-3.5 h-3.5" /></button>{error}</div>}
       {success && <div className="p-4 rounded-xl bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 text-sm flex items-center gap-2"><button onClick={() => setSuccess("")} className="p-0.5 hover:text-emerald-300"><X className="w-3.5 h-3.5" /></button>{success}</div>}
 
-      <div className="relative max-w-md">
-        <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-surface-500" />
-        <input type="text" placeholder="Search by name or memo..." value={search} onChange={e => setSearch(e.target.value)}
-          className="w-full pl-10 pr-4 py-2.5 bg-surface-900 border border-surface-700/50 rounded-lg text-surface-50 text-sm placeholder:text-surface-600 focus:outline-none focus:border-brand-500/50" />
+      {/* ── Test Email Card ── */}
+      <div className="bg-surface-900 border border-surface-700 rounded-xl p-5">
+        <div className="flex items-center gap-2 mb-3">
+          <Mail className="w-5 h-5 text-brand-400" />
+          <h2 className="text-lg font-bold text-surface-50">Test Email Delivery</h2>
+          <span className="text-surface-500 text-xs ml-2">Verify SMTP is working</span>
+        </div>
+        <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3">
+          <input
+            type="email"
+            value={testEmail}
+            onChange={e => { setTestEmail(e.target.value); setTestResult(null); }}
+            onKeyDown={e => e.key === "Enter" && sendTestEmail()}
+            placeholder="admin@example.com"
+            className="flex-1 px-4 py-2.5 bg-surface-800 border border-surface-600 rounded-lg text-surface-50 text-sm placeholder:text-surface-500 focus:outline-none focus:border-brand-500 transition-colors"
+          />
+          <button
+            onClick={sendTestEmail}
+            disabled={sending || !testEmail.trim()}
+            className="flex items-center gap-2 px-5 py-2.5 rounded-lg bg-brand-600 hover:bg-brand-500 disabled:bg-surface-700 disabled:text-surface-500 text-white text-sm font-medium transition-colors disabled:cursor-not-allowed"
+          >
+            {sending ? (
+              <><Loader2 className="w-4 h-4 animate-spin" />Sending...</>
+            ) : (
+              <><Send className="w-4 h-4" />Send Test Email</>
+            )}
+          </button>
+        </div>
+        {testResult && (
+          <div className={`mt-3 p-3 rounded-lg text-sm flex items-start gap-2 ${
+            testResult.success
+              ? "bg-emerald-500/10 border border-emerald-500/20 text-emerald-400"
+              : "bg-red-500/10 border border-red-500/20 text-red-400"
+          }`}>
+            <button onClick={() => setTestResult(null)} className="p-0.5 hover:opacity-70 flex-shrink-0 mt-0.5">
+              <X className="w-3.5 h-3.5" />
+            </button>
+            <span>{testResult.message}</span>
+          </div>
+        )}
       </div>
 
-      <div className="bg-surface-900 border border-surface-700/50 rounded-xl overflow-hidden">
-        <div className="overflow-x-auto">
-          <table className="w-full text-sm">
-            <thead><tr className="border-b border-surface-800">
-              <th className="text-left px-4 py-3 text-surface-400 font-medium text-xs uppercase tracking-wider">#</th>
-              <th className="text-left px-4 py-3 text-surface-400 font-medium text-xs uppercase tracking-wider">Name</th>
-              <th className="text-left px-4 py-3 text-surface-400 font-medium text-xs uppercase tracking-wider">Value</th>
-              <th className="text-left px-4 py-3 text-surface-400 font-medium text-xs uppercase tracking-wider">Type</th>
-              <th className="text-left px-4 py-3 text-surface-400 font-medium text-xs uppercase tracking-wider">Description</th>
-              <th className="text-center px-4 py-3 text-surface-400 font-medium text-xs uppercase tracking-wider w-20">Edit</th>
-            </tr></thead>
-            <tbody>
-              {loading ? Array.from({ length: 5 }).map((_, i) => (
-                <tr key={i} className="border-b border-surface-800/50">
-                  {Array.from({ length: 6 }).map((_, j) => <td key={j} className="px-4 py-3"><div className="h-4 bg-surface-800 rounded animate-pulse" /></td>)}
-                </tr>
-              )) : filtered.length === 0 ? (
-                <tr><td colSpan={6} className="px-4 py-12 text-center text-surface-500">
-                  <Settings className="w-10 h-10 mx-auto mb-2 text-surface-600" /><p>No parameters found</p></td></tr>
-              ) : filtered.map(p => (
-                <tr key={p.id} className={`border-b border-surface-800/50 transition-colors ${editingId === p.id ? "bg-brand-500/5" : "hover:bg-surface-800/30"}`}>
-                  <td className="px-4 py-3 text-surface-500 text-xs font-mono">{p.id}</td>
-                  <td className="px-4 py-3 text-surface-50 font-medium font-mono text-xs">{p.name}</td>
-                  <td className="px-4 py-3">
-                    {editingId === p.id ? (
-                      <div className="flex items-center gap-2">
-                        <input type="text" value={editValue} onChange={e => setEditValue(e.target.value)}
-                          className="flex-1 px-3 py-1.5 bg-surface-800 border border-brand-500/50 rounded-lg text-surface-50 text-sm font-mono focus:outline-none" autoFocus />
-                        <button onClick={() => saveEdit(p.id)} disabled={saving}
-                          className="p-1.5 rounded bg-emerald-600 hover:bg-emerald-500 text-white"><Check className="w-3.5 h-3.5" /></button>
-                        <button onClick={cancelEdit} className="p-1.5 rounded hover:bg-surface-700 text-surface-400"><X className="w-3.5 h-3.5" /></button>
-                      </div>
-                    ) : <span className="text-surface-200 font-mono text-xs">{p.value}</span>}
-                  </td>
-                  <td className="px-4 py-3 text-surface-400 text-xs">{p.type || "—"}</td>
-                  <td className="px-4 py-3 text-surface-500 text-xs max-w-[250px] truncate" title={p.memo}>{p.memo || "—"}</td>
-                  <td className="px-4 py-3 text-center">
-                    {editingId !== p.id && (
-                      <button onClick={() => startEdit(p)} className="p-1.5 rounded hover:bg-surface-700 text-surface-400 hover:text-surface-50">
-                        <Edit2 className="w-3.5 h-3.5" />
-                      </button>
-                    )}
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      </div>
+      <DataTable
+        columns={[
+          { key: "id", label: "#", render: (p: SysParam) => <span className="text-surface-500 text-xs font-mono">{p.id}</span> },
+          { key: "name", label: "Name", render: (p: SysParam) => <span className="text-surface-50 font-medium font-mono text-xs">{p.name}</span> },
+          { key: "value", label: "Value", render: (p: SysParam) => (
+            editingId === p.id ? (
+              <div className="flex items-center gap-2">
+                <input type="text" value={editValue} onChange={e => setEditValue(e.target.value)}
+                  className="flex-1 px-3 py-1.5 bg-surface-800 border border-brand-500/50 rounded-lg text-surface-50 text-sm font-mono focus:outline-none" autoFocus />
+                <button onClick={() => saveEdit(p.id)} disabled={saving}
+                  className="p-1.5 rounded bg-emerald-600 hover:bg-emerald-500 text-white"><Check className="w-3.5 h-3.5" /></button>
+                <button onClick={cancelEdit} className="p-1.5 rounded hover:bg-surface-700 text-surface-400"><X className="w-3.5 h-3.5" /></button>
+              </div>
+            ) : <span className="text-surface-200 font-mono text-xs">{p.value}</span>
+          )},
+          { key: "type", label: "Type", render: (p: SysParam) => <span className="text-surface-400 text-xs">{p.type || "—"}</span> },
+          { key: "memo", label: "Description", render: (p: SysParam) => (
+            <span className="text-surface-500 text-xs max-w-[250px] truncate block" title={p.memo}>{p.memo || "—"}</span>
+          )},
+          { key: "actions", label: "Edit", textAlign: "center" as const, width: "5rem", render: (p: SysParam) => (
+            editingId !== p.id ? (
+              <button onClick={() => startEdit(p)} className="p-1.5 rounded hover:bg-surface-700 text-surface-400 hover:text-surface-50">
+                <Edit2 className="w-3.5 h-3.5" />
+              </button>
+            ) : null
+          )},
+        ]}
+        data={params}
+        searchKey="name"
+        loading={loading}
+        emptyIcon={<Settings className="w-10 h-10 text-surface-600" />}
+        emptyMessage="No parameters found"
+        pageSize={20}
+      />
     </div>
   );
 }

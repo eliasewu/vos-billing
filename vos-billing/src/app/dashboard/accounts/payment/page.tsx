@@ -1,7 +1,8 @@
 "use client";
 
 import { useState, useEffect, useCallback } from "react";
-import { Wallet, Search, RefreshCw, DollarSign, ArrowUp, ArrowDown, History, Plus, Send, X, Calendar } from "lucide-react";
+import { Wallet, RefreshCw, DollarSign, ArrowUp, ArrowDown, History, Plus, Send, X, Calendar } from "lucide-react";
+import DataTable from "@/components/DataTable";
 
 interface Customer { id: number; account: string; name: string; money: number; limitMoney: number; }
 interface PaymentRecord { id: number; customerAccount: string; customerName: string; payMoney: number; customerMoney: number; time: number; memo: string; payType: number; type: number; loginName: string; }
@@ -61,7 +62,7 @@ export default function PaymentPage() {
   const parseDate = (d: string) => d ? Math.floor(new Date(d).getTime() / 1000) : 0;
   const from = parseDate(startDate);
   const parsedEnd = parseDate(endDate);
-  const to = parsedEnd ? parsedEnd + 86400 : 0; // end of day
+  const to = parsedEnd ? parsedEnd + 86400 : 0;
 
   const filteredHistory = history.filter(h => {
     const matchesSearch = h.customerName.toLowerCase().includes(search.toLowerCase()) ||
@@ -119,10 +120,9 @@ export default function PaymentPage() {
       {/* Search & Date Filters */}
       <div className="flex flex-wrap gap-3">
         <div className="relative flex-1 min-w-[200px] max-w-md">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-surface-500" />
           <input type="text" placeholder="Search by customer name or account..."
             value={search} onChange={e => setSearch(e.target.value)}
-            className="w-full pl-10 pr-4 py-2.5 bg-surface-900 border border-surface-700/50 rounded-lg text-surface-50 text-sm placeholder:text-surface-600 focus:outline-none focus:border-brand-500/50" />
+            className="w-full px-4 py-2.5 bg-surface-900 border border-surface-700/50 rounded-lg text-surface-50 text-sm placeholder:text-surface-600 focus:outline-none focus:border-brand-500/50" />
         </div>
         <div className="relative">
           <Calendar className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-surface-500" />
@@ -143,54 +143,44 @@ export default function PaymentPage() {
       </div>
 
       {/* History Table */}
-      <div className="bg-surface-900 border border-surface-700/50 rounded-xl overflow-hidden">
-        <div className="overflow-x-auto">
-          <table className="w-full text-sm">
-            <thead>
-              <tr className="border-b border-surface-800">
-                <th className="text-left px-4 py-3 text-surface-400 font-medium text-xs uppercase">Customer</th>
-                <th className="text-right px-4 py-3 text-surface-400 font-medium text-xs uppercase">Amount</th>
-                <th className="text-right px-4 py-3 text-surface-400 font-medium text-xs uppercase">Balance After</th>
-                <th className="text-left px-4 py-3 text-surface-400 font-medium text-xs uppercase">Type</th>
-                <th className="text-left px-4 py-3 text-surface-400 font-medium text-xs uppercase">Time</th>
-                <th className="text-left px-4 py-3 text-surface-400 font-medium text-xs uppercase">Operator</th>
-                <th className="text-left px-4 py-3 text-surface-400 font-medium text-xs uppercase">Memo</th>
-              </tr>
-            </thead>
-            <tbody>
-              {loading ? Array.from({ length: 5 }).map((_, i) => (
-                <tr key={i} className="border-b border-surface-800/50">
-                  {Array.from({ length: 7 }).map((_, j) => <td key={j} className="px-4 py-3"><div className="h-4 bg-surface-800 rounded animate-pulse" /></td>)}
-                </tr>
-              )) : filteredHistory.length === 0 ? (
-                <tr><td colSpan={7} className="px-4 py-16 text-center text-surface-500">
-                  <History className="w-12 h-12 mx-auto mb-3 text-surface-600" />
-                  <p className="text-lg font-medium">No payment records</p>
-                </td></tr>
-              ) : filteredHistory.map(h => (
-                <tr key={h.id} className="border-b border-surface-800/50 hover:bg-surface-800/30">
-                  <td className="px-4 py-3">
-                    <div className="text-surface-50 font-medium">{h.customerName}</div>
-                    <div className="text-surface-500 text-xs font-mono">{h.customerAccount}</div>
-                  </td>
-                  <td className={`px-4 py-3 text-right font-mono text-sm ${h.payMoney >= 0 ? "text-emerald-400" : "text-red-400"}`}>
-                    {formatMoney(h.payMoney)}
-                  </td>
-                  <td className="px-4 py-3 text-right font-mono text-sm text-surface-300">{formatMoney(h.customerMoney)}</td>
-                  <td className="px-4 py-3">
-                    <span className={`inline-flex px-2 py-0.5 rounded text-xs font-medium ${h.type === 1 ? "bg-emerald-500/10 text-emerald-400" : "bg-red-500/10 text-red-400"}`}>
-                      {h.type === 1 ? "Top-up" : "Deduction"}
-                    </span>
-                  </td>
-                  <td className="px-4 py-3 text-surface-400 text-xs whitespace-nowrap">{formatTime(h.time)}</td>
-                  <td className="px-4 py-3 text-surface-300 text-xs">{h.loginName}</td>
-                  <td className="px-4 py-3 text-surface-400 text-xs max-w-[200px] truncate">{h.memo || "—"}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      </div>
+      <DataTable
+        columns={[
+          { key: "customer", label: "Customer", render: (h: PaymentRecord) => (
+            <div>
+              <div className="text-surface-50 font-medium">{h.customerName}</div>
+              <div className="text-surface-500 text-xs font-mono">{h.customerAccount}</div>
+            </div>
+          )},
+          { key: "payMoney", label: "Amount", textAlign: "right" as const, render: (h: PaymentRecord) => (
+            <span className={`font-mono text-sm ${h.payMoney >= 0 ? "text-emerald-400" : "text-red-400"}`}>
+              {formatMoney(h.payMoney)}
+            </span>
+          )},
+          { key: "customerMoney", label: "Balance After", textAlign: "right" as const, render: (h: PaymentRecord) => (
+            <span className="font-mono text-sm text-surface-300">{formatMoney(h.customerMoney)}</span>
+          )},
+          { key: "type", label: "Type", render: (h: PaymentRecord) => (
+            <span className={`inline-flex px-2 py-0.5 rounded text-xs font-medium ${h.type === 1 ? "bg-emerald-500/10 text-emerald-400" : "bg-red-500/10 text-red-400"}`}>
+              {h.type === 1 ? "Top-up" : "Deduction"}
+            </span>
+          )},
+          { key: "time", label: "Time", render: (h: PaymentRecord) => (
+            <span className="text-surface-400 text-xs whitespace-nowrap">{formatTime(h.time)}</span>
+          )},
+          { key: "loginName", label: "Operator", render: (h: PaymentRecord) => (
+            <span className="text-surface-300 text-xs">{h.loginName}</span>
+          )},
+          { key: "memo", label: "Memo", render: (h: PaymentRecord) => (
+            <span className="text-surface-400 text-xs max-w-[200px] truncate block">{h.memo || "—"}</span>
+          )},
+        ]}
+        data={filteredHistory}
+        loading={loading}
+        emptyIcon={<History className="w-12 h-12 text-surface-600" />}
+        emptyMessage="No payment records"
+        emptySubtitle="Try adjusting the date range filters above"
+        pageSize={20}
+      />
 
       {/* Payment Modal */}
       {showModal && (

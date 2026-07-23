@@ -1,7 +1,9 @@
 "use client";
 
 import { useState, useEffect, useCallback } from "react";
-import { TrendingUp, RefreshCw, DollarSign, PhoneCall, Timer, Percent, BarChart3, Users, Download } from "lucide-react";
+import { TrendingUp, RefreshCw, BarChart3, Users, Download } from "lucide-react";
+import DataTable, { type Column } from "@/components/DataTable";
+import { moneyRender } from "@/components/DataTableHelpers";
 
 interface CustomerStat { customerId: number; name: string; calls: number; success: number; duration: number; fee: number; cost: number; profit: number; margin: number; asr: number; acd: number; }
 interface DailyTrend { date: string; calls: number; success: number; fee: number; profit: number; }
@@ -26,7 +28,6 @@ export default function BusinessAnalysisPage() {
   useEffect(() => { fetchData(); }, [fetchData]);
 
   const formatMoney = (v: number) => `$${Number(v || 0).toFixed(2)}`;
-  const formatDuration = (s: number) => { const h = Math.floor(s / 3600), m = Math.floor((s % 3600) / 60); return h > 0 ? `${h}h ${m}m` : `${m}m`; };
 
   const exportCSV = () => {
     if (!data) return;
@@ -66,60 +67,41 @@ export default function BusinessAnalysisPage() {
           {/* Customer Breakdown */}
           <div className="bg-surface-900 border border-surface-700/50 rounded-xl overflow-hidden">
             <div className="px-5 py-3 border-b border-surface-800"><h3 className="text-sm font-semibold text-surface-50 flex items-center gap-2"><Users className="w-4 h-4 text-brand-400" />Customer Profitability</h3></div>
-            <div className="overflow-x-auto">
-              <table className="w-full text-sm">
-                <thead><tr className="border-b border-surface-800">
-                  <th className="text-left px-4 py-2 text-surface-400 text-xs uppercase">Customer</th>
-                  <th className="text-right px-4 py-2 text-surface-400 text-xs uppercase">Calls</th>
-                  <th className="text-right px-4 py-2 text-surface-400 text-xs uppercase">ASR</th>
-                  <th className="text-right px-4 py-2 text-surface-400 text-xs uppercase">Revenue</th>
-                  <th className="text-right px-4 py-2 text-surface-400 text-xs uppercase">Cost</th>
-                  <th className="text-right px-4 py-2 text-surface-400 text-xs uppercase">Profit</th>
-                  <th className="text-right px-4 py-2 text-surface-400 text-xs uppercase">Margin</th>
-                </tr></thead>
-                <tbody>
-                  {data.customers.map(c => (
-                    <tr key={c.customerId || c.name} className="border-b border-surface-800/50 hover:bg-surface-800/30">
-                      <td className="px-4 py-2 text-surface-50 font-medium text-xs">{c.name || "Unknown"}</td>
-                      <td className="px-4 py-2 text-right text-surface-300 text-xs">{c.calls?.toLocaleString()}</td>
-                      <td className="px-4 py-2 text-right text-surface-300 text-xs">{c.asr}%</td>
-                      <td className="px-4 py-2 text-right text-emerald-400 font-mono text-xs">{formatMoney(c.fee)}</td>
-                      <td className="px-4 py-2 text-right text-red-400 font-mono text-xs">{formatMoney(c.cost)}</td>
-                      <td className={`px-4 py-2 text-right font-mono text-xs ${c.profit >= 0 ? "text-emerald-400" : "text-red-400"}`}>{formatMoney(c.profit)}</td>
-                      <td className={`px-4 py-2 text-right text-xs ${c.margin >= 0 ? "text-emerald-400" : "text-red-400"}`}>{c.margin}%</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
+            <DataTable<CustomerStat>
+              columns={[
+                { key: "name", label: "Customer", cellClassName: "font-medium text-xs", render: (c) => c.name || "Unknown" },
+                { key: "calls", label: "Calls", textAlign: "right", render: (c) => c.calls?.toLocaleString() },
+                { key: "asr", label: "ASR", textAlign: "right", render: (c) => `${c.asr}%` },
+                { key: "fee", label: "Revenue", textAlign: "right", render: moneyRender<CustomerStat>((c) => c.fee, 2) },
+                { key: "cost", label: "Cost", textAlign: "right", render: moneyRender<CustomerStat>((c) => c.cost, 2) },
+                { key: "profit", label: "Profit", textAlign: "right", render: moneyRender<CustomerStat>((c) => c.profit, 2) },
+                { key: "margin", label: "Margin", textAlign: "right", render: (c) => <span className={c.margin >= 0 ? "text-emerald-400" : "text-red-400"}>{c.margin}%</span> },
+              ]}
+              data={data.customers}
+              searchKey="name"
+              pageSize={20}
+              emptyMessage="No customer data for this period"
+              emptySubtitle="Try selecting a different date range"
+            />
           </div>
 
           {/* Daily Trends */}
           {data.dailyTrends?.length > 0 && (
             <div className="bg-surface-900 border border-surface-700/50 rounded-xl overflow-hidden">
               <div className="px-5 py-3 border-b border-surface-800"><h3 className="text-sm font-semibold text-surface-50 flex items-center gap-2"><BarChart3 className="w-4 h-4 text-amber-400" />Daily Trends ({days}d)</h3></div>
-              <div className="overflow-x-auto">
-                <table className="w-full text-sm">
-                  <thead><tr className="border-b border-surface-800">
-                    <th className="text-left px-4 py-2 text-surface-400 text-xs uppercase">Date</th>
-                    <th className="text-right px-4 py-2 text-surface-400 text-xs uppercase">Calls</th>
-                    <th className="text-right px-4 py-2 text-surface-400 text-xs uppercase">Success</th>
-                    <th className="text-right px-4 py-2 text-surface-400 text-xs uppercase">Revenue</th>
-                    <th className="text-right px-4 py-2 text-surface-400 text-xs uppercase">Profit</th>
-                  </tr></thead>
-                  <tbody>
-                    {data.dailyTrends.map(t => (
-                      <tr key={t.date} className="border-b border-surface-800/50 hover:bg-surface-800/30">
-                        <td className="px-4 py-2 text-surface-50 text-xs">{t.date}</td>
-                        <td className="px-4 py-2 text-right text-surface-300 text-xs">{t.calls}</td>
-                        <td className="px-4 py-2 text-right text-surface-300 text-xs">{t.success}</td>
-                        <td className="px-4 py-2 text-right text-emerald-400 font-mono text-xs">{formatMoney(t.fee)}</td>
-                        <td className={`px-4 py-2 text-right font-mono text-xs ${t.profit >= 0 ? "text-emerald-400" : "text-red-400"}`}>{formatMoney(t.profit)}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
+              <DataTable<DailyTrend>
+                columns={[
+                  { key: "date", label: "Date", cellClassName: "text-xs" },
+                  { key: "calls", label: "Calls", textAlign: "right", render: (t) => t.calls?.toLocaleString() },
+                  { key: "success", label: "Success", textAlign: "right", render: (t) => t.success?.toLocaleString() },
+                  { key: "fee", label: "Revenue", textAlign: "right", render: moneyRender<DailyTrend>((t) => t.fee, 2) },
+                  { key: "profit", label: "Profit", textAlign: "right", render: moneyRender<DailyTrend>((t) => t.profit, 2) },
+                ]}
+                data={data.dailyTrends}
+                searchKey="date"
+                pageSize={14}
+                emptyMessage="No daily trend data"
+              />
             </div>
           )}
 
@@ -127,28 +109,19 @@ export default function BusinessAnalysisPage() {
           {data.gatewayStats?.length > 0 && (
             <div className="bg-surface-900 border border-surface-700/50 rounded-xl overflow-hidden">
               <div className="px-5 py-3 border-b border-surface-800"><h3 className="text-sm font-semibold text-surface-50 flex items-center gap-2"><TrendingUp className="w-4 h-4 text-purple-400" />Gateway Performance</h3></div>
-              <div className="overflow-x-auto">
-                <table className="w-full text-sm">
-                  <thead><tr className="border-b border-surface-800">
-                    <th className="text-left px-4 py-2 text-surface-400 text-xs uppercase">Gateway</th>
-                    <th className="text-right px-4 py-2 text-surface-400 text-xs uppercase">Calls</th>
-                    <th className="text-right px-4 py-2 text-surface-400 text-xs uppercase">Success</th>
-                    <th className="text-right px-4 py-2 text-surface-400 text-xs uppercase">ASR</th>
-                    <th className="text-right px-4 py-2 text-surface-400 text-xs uppercase">ACD</th>
-                  </tr></thead>
-                  <tbody>
-                    {data.gatewayStats.map(g => (
-                      <tr key={g.name} className="border-b border-surface-800/50 hover:bg-surface-800/30">
-                        <td className="px-4 py-2 text-surface-50 font-medium text-xs">{g.name}</td>
-                        <td className="px-4 py-2 text-right text-surface-300 text-xs">{g.calls}</td>
-                        <td className="px-4 py-2 text-right text-surface-300 text-xs">{g.success}</td>
-                        <td className="px-4 py-2 text-right text-surface-300 text-xs">{g.asr}%</td>
-                        <td className="px-4 py-2 text-right text-surface-300 text-xs">{g.acd}s</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
+              <DataTable<GatewayStat>
+                columns={[
+                  { key: "name", label: "Gateway", cellClassName: "font-medium text-xs" },
+                  { key: "calls", label: "Calls", textAlign: "right", render: (g) => g.calls?.toLocaleString() },
+                  { key: "success", label: "Success", textAlign: "right", render: (g) => g.success?.toLocaleString() },
+                  { key: "asr", label: "ASR", textAlign: "right", render: (g) => `${g.asr}%` },
+                  { key: "acd", label: "ACD", textAlign: "right", render: (g) => `${g.acd}s` },
+                ]}
+                data={data.gatewayStats}
+                searchKey="name"
+                pageSize={20}
+                emptyMessage="No gateway performance data"
+              />
             </div>
           )}
         </>

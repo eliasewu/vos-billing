@@ -1,9 +1,12 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { FileText, RefreshCw, DollarSign, PhoneCall, Timer, Plus, Edit2, Trash2, X, Zap, Loader2 } from "lucide-react";
+import { FileText, DollarSign, PhoneCall, Plus, Edit2, Trash2, X, Zap, Loader2, RefreshCw } from "lucide-react";
+import DataTable from "@/components/DataTable";
+import { moneyRender, actionsRender } from "@/components/DataTableHelpers";
+import { safeErrorString } from "@/lib/utils";
 
-interface Bill { id: number; customerId: number; customerName: string; billDate: string; totalCalls: number; totalDuration: number; totalFee: number; status: number; memo: string; }
+interface Bill { id: number; customerId: number; customerName: string; billDate: string; periodStart: string | null; periodEnd: string | null; totalCalls: number; totalDuration: number; totalFee: number; status: number; memo: string; addtime: number; }
 
 export default function BillingPage() {
   const [bills, setBills] = useState<Bill[]>([]);
@@ -12,7 +15,7 @@ export default function BillingPage() {
   const [showModal, setShowModal] = useState(false);
   const [editingBill, setEditingBill] = useState<Bill | null>(null);
   const [saving, setSaving] = useState(false);
-  const [form, setForm] = useState({ customerId: 0, billDate: new Date().toISOString().slice(0, 10), totalCalls: 0, totalDuration: 0, totalFee: 0, memo: "" });
+  const [form, setForm] = useState({ customerId: 0, billDate: new Date().toISOString().slice(0, 10), periodStart: "", periodEnd: "", totalCalls: 0, totalDuration: 0, totalFee: 0, memo: "" });
   const [generating, setGenerating] = useState(false);
   const [genDate, setGenDate] = useState(new Date().toISOString().slice(0, 10));
   const [success, setSuccess] = useState("");
@@ -22,7 +25,7 @@ export default function BillingPage() {
     try {
       const res = await fetch("/api/vos/billing");
       const data = await res.json();
-      if (data.error) setError(data.error); else setBills(data.bills || []);
+      if (data.error) setError(safeErrorString(data.error)); else setBills(data.bills || []);
     } catch { setError("Failed to load billing records"); }
     finally { setLoading(false); }
   };
@@ -38,7 +41,7 @@ export default function BillingPage() {
         body: JSON.stringify({ date: genDate }),
       });
       const data = await res.json();
-      if (data.error) setError(data.error);
+      if (data.error) setError(safeErrorString(data.error));
       else {
         setSuccess(data.message || `Generated ${data.billsCreated} bills from ${data.cdrsProcessed} CDR records`);
         setTimeout(() => setSuccess(""), 6000);
@@ -51,10 +54,15 @@ export default function BillingPage() {
   const handleSave = async () => {
     setSaving(true);
     try {
-      // Note: API supports POST/DELETE only; for edits, delete+recreate
-      if (editingBill) { await fetch(`/api/vos/billing?id=${editingBill.id}`, { method: "DELETE" }); }
-      await fetch("/api/vos/billing", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(form) });
-      setShowModal(false); setEditingBill(null); fetchBills();
+      if (editingBill) {
+        const res = await fetch("/api/vos/billing", { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id: editingBill.id, ...form }) });
+        const data = await res.json();
+        if (data.error) setError(safeErrorString(data.error));
+        else { setShowModal(false); setEditingBill(null); fetchBills(); }
+      } else {
+        await fetch("/api/vos/billing", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(form) });
+        setShowModal(false); setEditingBill(null); fetchBills();
+      }
     } catch { setError("Failed to save"); }
     finally { setSaving(false); }
   };
@@ -77,7 +85,6 @@ export default function BillingPage() {
       <div className="flex items-center justify-between">
         <div><h1 className="text-2xl font-bold text-surface-50">Billing</h1><p className="text-surface-400 text-sm mt-1">Customer billing records</p></div>
         <div className="flex items-center gap-2">
-          {/* Generate Bills */}
           <div className="flex items-center gap-1.5">
             <input
               type="date"
@@ -95,7 +102,7 @@ export default function BillingPage() {
               {generating ? "Generating..." : "Generate Bills"}
             </button>
           </div>
-          <button onClick={() => { setEditingBill(null); setForm({ customerId: 0, billDate: new Date().toISOString().slice(0, 10), totalCalls: 0, totalDuration: 0, totalFee: 0, memo: "" }); setShowModal(true); }} className="flex items-center gap-2 px-4 py-2 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-sm font-medium"><Plus className="w-4 h-4" />Add Bill</button>
+          <button onClick={() => { setEditingBill(null); setForm({ customerId: 0, billDate: new Date().toISOString().slice(0, 10), periodStart: "", periodEnd: "", totalCalls: 0, totalDuration: 0, totalFee: 0, memo: "" }); setShowModal(true); }} className="flex items-center gap-2 px-4 py-2 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-sm font-medium"><Plus className="w-4 h-4" />Add Bill</button>
           <button onClick={fetchBills} className="flex items-center gap-2 px-4 py-2 rounded-lg bg-surface-800 text-surface-300 hover:bg-surface-700 text-sm"><RefreshCw className={`w-4 h-4 ${loading ? "animate-spin" : ""}`} />Refresh</button>
         </div>
       </div>
@@ -117,38 +124,45 @@ export default function BillingPage() {
         </div>
       )}
 
-      <div className="bg-surface-900 border border-surface-700/50 rounded-xl overflow-hidden">
-        <div className="overflow-x-auto">
-          <table className="w-full text-sm">
-            <thead><tr className="border-b border-surface-800">
-              <th className="text-left px-4 py-3 text-surface-400 font-medium text-xs uppercase">#</th>
-              <th className="text-left px-4 py-3 text-surface-400 font-medium text-xs uppercase">Customer</th>
-              <th className="text-left px-4 py-3 text-surface-400 font-medium text-xs uppercase">Bill Date</th>
-              <th className="text-right px-4 py-3 text-surface-400 font-medium text-xs uppercase">Calls</th>
-              <th className="text-right px-4 py-3 text-surface-400 font-medium text-xs uppercase">Duration</th>
-              <th className="text-right px-4 py-3 text-surface-400 font-medium text-xs uppercase">Fee</th>
-              <th className="text-center px-4 py-3 text-surface-400 font-medium text-xs uppercase">Status</th>
-              <th className="text-center px-4 py-3 text-surface-400 font-medium text-xs uppercase w-24">Actions</th>
-            </tr></thead>
-            <tbody>
-              {loading ? Array.from({ length: 5 }).map((_, i) => (<tr key={i} className="border-b border-surface-800/50">{Array.from({ length: 8 }).map((_, j) => <td key={j} className="px-4 py-3"><div className="h-4 bg-surface-800 rounded animate-pulse" /></td>)}</tr>))
-                : bills.length === 0 ? (<tr><td colSpan={8} className="px-4 py-12 text-center text-surface-500"><FileText className="w-10 h-10 mx-auto mb-2 text-surface-600" /><p>No billing records</p></td></tr>)
-                  : bills.map(b => (
-                    <tr key={b.id} className="border-b border-surface-800/50 hover:bg-surface-800/30">
-                      <td className="px-4 py-3 text-surface-500 text-xs">{b.id}</td>
-                      <td className="px-4 py-3 text-surface-50 font-medium">{b.customerName || `Customer #${b.customerId}`}</td>
-                      <td className="px-4 py-3 text-surface-300 text-xs">{b.billDate}</td>
-                      <td className="px-4 py-3 text-right text-surface-300">{b.totalCalls?.toLocaleString()}</td>
-                      <td className="px-4 py-3 text-right text-surface-300 font-mono text-xs">{formatDuration(b.totalDuration || 0)}</td>
-                      <td className="px-4 py-3 text-right font-mono text-sm text-emerald-400">${Number(b.totalFee || 0).toFixed(4)}</td>
-                      <td className="px-4 py-3 text-center"><span className={`inline-flex px-2 py-0.5 rounded-full text-xs font-medium ${b.status === 1 ? "bg-emerald-500/10 text-emerald-400" : b.status === 0 ? "bg-amber-500/10 text-amber-400" : "bg-surface-800 text-surface-500"}`}>{b.status === 1 ? "Paid" : b.status === 0 ? "Pending" : "Draft"}</span></td>
-                      <td className="px-4 py-3 text-center"><div className="flex items-center justify-center gap-1"><button onClick={() => { setEditingBill(b); setForm({ customerId: b.customerId, billDate: b.billDate, totalCalls: b.totalCalls, totalDuration: b.totalDuration || 0, totalFee: b.totalFee || 0, memo: b.memo || "" }); setShowModal(true); }} className="p-1.5 rounded hover:bg-surface-700 text-surface-400 hover:text-surface-50"><Edit2 className="w-3.5 h-3.5" /></button><button onClick={() => handleDelete(b.id)} className="p-1.5 rounded hover:bg-red-500/10 text-surface-400 hover:text-red-400"><Trash2 className="w-3.5 h-3.5" /></button></div></td>
-                    </tr>
-                  ))}
-            </tbody>
-          </table>
-        </div>
-      </div>
+      <DataTable
+        columns={[
+          { key: "id", label: "#", render: (b: Bill) => <span className="text-surface-500 text-xs">{b.id}</span> },
+          { key: "customerName", label: "Customer", render: (b: Bill) => (
+            <span className="text-surface-50 font-medium">{b.customerName || `Customer #${b.customerId}`}</span>
+          )},
+          { key: "billDate", label: "Bill Date", render: (b: Bill) => <span className="text-surface-300 text-xs">{b.billDate}</span> },
+          { key: "periodStart", label: "Period", render: (b: Bill) => (
+            <span className="text-surface-400 text-xs">{b.periodStart ? `${b.periodStart} → ${b.periodEnd||"..."}` : "—"}</span>
+          )},
+          { key: "totalCalls", label: "Calls", textAlign: "right" as const, render: (b: Bill) => (
+            <span className="text-surface-300">{b.totalCalls?.toLocaleString()}</span>
+          )},
+          { key: "totalDuration", label: "Duration", textAlign: "right" as const, render: (b: Bill) => (
+            <span className="text-surface-300 font-mono text-xs">{formatDuration(b.totalDuration || 0)}</span>
+          )},
+          { key: "totalFee", label: "Fee", textAlign: "right" as const, render: moneyRender((b: Bill) => Number(b.totalFee || 0), 4) },
+          { key: "addtime", label: "Created", render: (b: Bill) => (
+            <span className="text-surface-400 text-xs">{b.addtime ? new Date(b.addtime * 1000).toLocaleDateString("en-US", { year: "numeric", month: "short", day: "numeric" }) : "—"}</span>
+          )},
+          { key: "status", label: "Status", textAlign: "center" as const, render: (b: Bill) => (
+            <span className={`inline-flex px-2 py-0.5 rounded-full text-xs font-medium ${
+              b.status === 1 ? "bg-emerald-500/10 text-emerald-400" : b.status === 0 ? "bg-amber-500/10 text-amber-400" : "bg-surface-800 text-surface-500"
+            }`}>
+              {b.status === 1 ? "Paid" : b.status === 0 ? "Pending" : "Draft"}
+            </span>
+          )},
+          { key: "actions", label: "Actions", textAlign: "center" as const, render: actionsRender(
+            (b) => { setEditingBill(b); setForm({ customerId: b.customerId, billDate: b.billDate, periodStart: b.periodStart || "", periodEnd: b.periodEnd || "", totalCalls: b.totalCalls, totalDuration: b.totalDuration || 0, totalFee: b.totalFee || 0, memo: b.memo || "" }); setShowModal(true); },
+            (b) => handleDelete(b.id)
+          ) },
+        ]}
+        data={bills}
+        searchKey="customerName"
+        loading={loading}
+        emptyIcon={<FileText className="w-10 h-10 text-surface-600" />}
+        emptyMessage="No billing records"
+        pageSize={15}
+      />
 
       {showModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm">
@@ -158,6 +172,8 @@ export default function BillingPage() {
               <div className="grid grid-cols-2 gap-3">
                 <div><label className="block text-xs font-medium text-surface-400 mb-1">Customer ID</label><input type="number" value={form.customerId} onChange={e => setForm({ ...form, customerId: parseInt(e.target.value) || 0 })} className="w-full px-3 py-2 bg-surface-800 border border-surface-700/50 rounded-lg text-surface-50 text-sm focus:outline-none focus:border-brand-500/50" /></div>
                 <div><label className="block text-xs font-medium text-surface-400 mb-1">Bill Date</label><input type="date" value={form.billDate} onChange={e => setForm({ ...form, billDate: e.target.value })} className="w-full px-3 py-2 bg-surface-800 border border-surface-700/50 rounded-lg text-surface-50 text-sm focus:outline-none focus:border-brand-500/50" /></div>
+                <div><label className="block text-xs font-medium text-surface-400 mb-1">Period Start</label><input type="date" value={form.periodStart} onChange={e => setForm({ ...form, periodStart: e.target.value })} className="w-full px-3 py-2 bg-surface-800 border border-surface-700/50 rounded-lg text-surface-50 text-sm focus:outline-none focus:border-brand-500/50" /></div>
+                <div><label className="block text-xs font-medium text-surface-400 mb-1">Period End</label><input type="date" value={form.periodEnd} onChange={e => setForm({ ...form, periodEnd: e.target.value })} className="w-full px-3 py-2 bg-surface-800 border border-surface-700/50 rounded-lg text-surface-50 text-sm focus:outline-none focus:border-brand-500/50" /></div>
                 <div><label className="block text-xs font-medium text-surface-400 mb-1">Total Calls</label><input type="number" value={form.totalCalls} onChange={e => setForm({ ...form, totalCalls: parseInt(e.target.value) || 0 })} className="w-full px-3 py-2 bg-surface-800 border border-surface-700/50 rounded-lg text-surface-50 text-sm focus:outline-none focus:border-brand-500/50" /></div>
                 <div><label className="block text-xs font-medium text-surface-400 mb-1">Duration (s)</label><input type="number" value={form.totalDuration} onChange={e => setForm({ ...form, totalDuration: parseInt(e.target.value) || 0 })} className="w-full px-3 py-2 bg-surface-800 border border-surface-700/50 rounded-lg text-surface-50 text-sm focus:outline-none focus:border-brand-500/50" /></div>
               </div>

@@ -25,13 +25,28 @@ export function getVosPool(): mysql.Pool {
   return pool;
 }
 
+/** Convert Buffer values from mysql2 to strings/numbers to prevent
+ *  {type:"Buffer",data:[...]} JSON serialization that crashes React. */
+function sanitizeRow(row: unknown): unknown {
+  if (Buffer.isBuffer(row)) return row.toString();
+  if (Array.isArray(row)) return row.map(sanitizeRow);
+  if (row !== null && typeof row === "object") {
+    const out: Record<string, unknown> = {};
+    for (const [k, v] of Object.entries(row as Record<string, unknown>)) {
+      out[k] = sanitizeRow(v);
+    }
+    return out;
+  }
+  return row;
+}
+
 export async function queryVos<T = unknown>(
   sql: string,
   params?: (string | number | boolean | null | Date)[]
 ): Promise<T[]> {
   const p = getVosPool();
   const [rows] = await p.execute(sql, params);
-  return rows as T[];
+  return (rows as unknown[]).map(sanitizeRow) as T[];
 }
 
 export async function executeVos(

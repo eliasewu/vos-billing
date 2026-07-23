@@ -1,7 +1,9 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { UserCog, Search, RefreshCw, DollarSign, Users, Plus, Edit2, Trash2, X, Loader2 } from "lucide-react";
+import { UserCog, DollarSign, Users, Plus, Edit2, Trash2, X, Loader2, RefreshCw } from "lucide-react";
+import DataTable from "@/components/DataTable";
+import { moneyRender, actionsRender, statusToggleRender } from "@/components/DataTableHelpers";
 
 interface Agent { id: number; name: string; account: string; money: number; limitMoney: number; rate: number; status: number; parentId: number; parentName: string; memo: string; }
 
@@ -9,7 +11,6 @@ export default function AgentAccountPage() {
   const [agents, setAgents] = useState<Agent[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
-  const [search, setSearch] = useState("");
   const [showModal, setShowModal] = useState(false);
   const [editingAgent, setEditingAgent] = useState<Agent | null>(null);
   const [saving, setSaving] = useState(false);
@@ -31,12 +32,17 @@ export default function AgentAccountPage() {
   const handleSave = async () => {
     setSaving(true);
     try {
-      // Note: API supports POST only (no PUT); for edits, delete+recreate or use POST
-      if (editingAgent) { await fetch(`/api/vos/agents?id=${editingAgent.id}`, { method: "DELETE" }); }
-      const res = await fetch("/api/vos/agents", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(form) });
-      const data = await res.json();
-      if (data.error) setError(data.error);
-      else { setShowModal(false); setEditingAgent(null); fetchAgents(); }
+      if (editingAgent) {
+        const res = await fetch("/api/vos/agents", { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id: editingAgent.id, ...form }) });
+        const data = await res.json();
+        if (data.error) setError(data.error);
+        else { setShowModal(false); setEditingAgent(null); fetchAgents(); }
+      } else {
+        const res = await fetch("/api/vos/agents", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(form) });
+        const data = await res.json();
+        if (data.error) setError(data.error);
+        else { setShowModal(false); setEditingAgent(null); fetchAgents(); }
+      }
     } catch { setError("Failed to save"); }
     finally { setSaving(false); }
   };
@@ -77,7 +83,6 @@ export default function AgentAccountPage() {
   };
 
   const formatMoney = (v: number) => `$${v.toFixed(4)}`;
-  const filtered = agents.filter(a => a.name.toLowerCase().includes(search.toLowerCase()) || a.account.toLowerCase().includes(search.toLowerCase()));
   const totalBalance = agents.reduce((s, a) => s + a.money, 0);
 
   return (
@@ -96,56 +101,32 @@ export default function AgentAccountPage() {
         <div className="bg-surface-900 border border-surface-700/50 rounded-xl p-5"><div className="flex items-center gap-3"><div className="w-10 h-10 rounded-lg bg-amber-500/10 flex items-center justify-center"><DollarSign className="w-5 h-5 text-amber-400" /></div><div><p className={`text-2xl font-bold ${totalBalance >= 0 ? "text-emerald-400" : "text-red-400"}`}>{formatMoney(totalBalance)}</p><p className="text-xs text-surface-400">Total Balance</p></div></div></div>
       </div>
 
-      <div className="relative max-w-md"><Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-surface-500" /><input type="text" placeholder="Search by name or account..." value={search} onChange={e => setSearch(e.target.value)} className="w-full pl-10 pr-4 py-2.5 bg-surface-900 border border-surface-700/50 rounded-lg text-surface-50 text-sm placeholder:text-surface-600 focus:outline-none focus:border-brand-500/50" /></div>
-
       {error && <div className="p-4 rounded-xl bg-red-500/10 border border-red-500/20 text-red-400 text-sm">{error}</div>}
 
-      <div className="bg-surface-900 border border-surface-700/50 rounded-xl overflow-hidden">
-        <div className="overflow-x-auto">
-          <table className="w-full text-sm">
-            <thead><tr className="border-b border-surface-800">
-              <th className="text-left px-4 py-3 text-surface-400 font-medium text-xs uppercase">#</th>
-              <th className="text-left px-4 py-3 text-surface-400 font-medium text-xs uppercase">Name</th>
-              <th className="text-left px-4 py-3 text-surface-400 font-medium text-xs uppercase">Account</th>
-              <th className="text-right px-4 py-3 text-surface-400 font-medium text-xs uppercase">Balance</th>
-              <th className="text-right px-4 py-3 text-surface-400 font-medium text-xs uppercase">Limit</th>
-              <th className="text-right px-4 py-3 text-surface-400 font-medium text-xs uppercase">Rate %</th>
-              <th className="text-center px-4 py-3 text-surface-400 font-medium text-xs uppercase">Status</th>
-              <th className="text-left px-4 py-3 text-surface-400 font-medium text-xs uppercase">Parent</th>
-              <th className="text-center px-4 py-3 text-surface-400 font-medium text-xs uppercase w-24">Actions</th>
-            </tr></thead>
-            <tbody>
-              {loading ? Array.from({ length: 5 }).map((_, i) => (<tr key={i} className="border-b border-surface-800/50">{Array.from({ length: 9 }).map((_, j) => <td key={j} className="px-4 py-3"><div className="h-4 bg-surface-800 rounded animate-pulse" /></td>)}</tr>))
-                : filtered.length === 0 ? (<tr><td colSpan={9} className="px-4 py-12 text-center text-surface-500"><UserCog className="w-10 h-10 mx-auto mb-2 text-surface-600" /><p>No agents found</p></td></tr>)
-                  : filtered.map(a => (
-                    <tr key={a.id} className="border-b border-surface-800/50 hover:bg-surface-800/30">
-                      <td className="px-4 py-3 text-surface-500 text-xs">{a.id}</td>
-                      <td className="px-4 py-3 text-surface-50 font-medium">{a.name}</td>
-                      <td className="px-4 py-3 text-surface-300 font-mono text-xs">{a.account}</td>
-                      <td className={`px-4 py-3 text-right font-mono text-sm ${a.money < 0 ? "text-red-400" : "text-emerald-400"}`}>{formatMoney(a.money)}</td>
-                      <td className="px-4 py-3 text-right text-surface-300 font-mono text-sm">${a.limitMoney.toFixed(2)}</td>
-                      <td className="px-4 py-3 text-right text-surface-300">{a.rate}%</td>
-                      <td className="px-4 py-3 text-center">
-                        <button
-                          onClick={() => handleToggleStatus(a.id, a.status)}
-                          disabled={togglingIds.has(a.id)}
-                          title={a.status === 0 ? "Click to deactivate" : "Click to activate"}
-                          className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium transition-all cursor-pointer ${
-                            a.status === 0 ? "bg-emerald-500/10 text-emerald-400 hover:bg-emerald-500/20" : "bg-red-500/10 text-red-400 hover:bg-red-500/20"
-                          }`}
-                        >
-                          {togglingIds.has(a.id) ? <Loader2 className="w-3 h-3 animate-spin" /> : null}
-                          {a.status === 0 ? "Active" : "Inactive"}
-                        </button>
-                      </td>
-                      <td className="px-4 py-3 text-surface-400 text-xs">{a.parentName || "—"}</td>
-                      <td className="px-4 py-3 text-center"><div className="flex items-center justify-center gap-1"><button onClick={() => openEdit(a)} className="p-1.5 rounded hover:bg-surface-700 text-surface-400 hover:text-surface-50"><Edit2 className="w-3.5 h-3.5" /></button><button onClick={() => handleDelete(a.id)} className="p-1.5 rounded hover:bg-red-500/10 text-surface-400 hover:text-red-400"><Trash2 className="w-3.5 h-3.5" /></button></div></td>
-                    </tr>
-                  ))}
-            </tbody>
-          </table>
-        </div>
-      </div>
+      <DataTable
+        columns={[
+          { key: "id", label: "#", render: (a: Agent) => <span className="text-surface-500 text-xs">{a.id}</span> },
+          { key: "name", label: "Name", render: (a: Agent) => <span className="text-surface-50 font-medium">{a.name}</span> },
+          { key: "account", label: "Account", render: (a: Agent) => <span className="text-surface-300 font-mono text-xs">{a.account}</span> },
+          { key: "money", label: "Balance", textAlign: "right" as const, render: moneyRender((a: Agent) => a.money) },
+          { key: "limitMoney", label: "Limit", textAlign: "right" as const, render: (a: Agent) => (
+            <span className="text-surface-300 font-mono text-sm">${a.limitMoney.toFixed(2)}</span>
+          )},
+          { key: "rate", label: "Rate %", textAlign: "right" as const, render: (a: Agent) => <span className="text-surface-300">{a.rate}%</span> },
+          { key: "status", label: "Status", textAlign: "center" as const, render: statusToggleRender({
+            getId: (a) => a.id, getStatus: (a) => a.status, onToggle: handleToggleStatus, togglingIds,
+            labels: { 0: "Active", 1: "Inactive" },
+          }) },
+          { key: "parentName", label: "Parent", render: (a: Agent) => <span className="text-surface-400 text-xs">{a.parentName || "—"}</span> },
+          { key: "actions", label: "Actions", textAlign: "center" as const, render: actionsRender(openEdit, (a) => handleDelete(a.id)) },
+        ]}
+        data={agents}
+        searchKey="name"
+        loading={loading}
+        emptyIcon={<UserCog className="w-10 h-10 text-surface-600" />}
+        emptyMessage="No agents found"
+        pageSize={15}
+      />
 
       {showModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm">

@@ -1,10 +1,12 @@
 "use client";
 
-import { useState, useEffect, useRef } from "react";
-import { Layers, RefreshCw, Shield, Plus, X, Send, Upload, FileUp, Search, Edit2, Trash2, Loader2, Edit3, ArrowRightLeft, Square, CheckSquare } from "lucide-react";
+import React, { useState, useEffect, useRef } from "react";
+import { Layers, RefreshCw, Shield, Plus, X, Send, Upload, FileUp, Search, Edit2, Trash2, Loader2, Edit3, ArrowRightLeft, Square, CheckSquare, Download, ChevronDown } from "lucide-react";
+import { parseExcel, parseCSV } from "@/lib/rate-parsers";
+import type { CsvRow } from "@/lib/rate-parsers";
+import * as XLSX from "xlsx";
 
 interface RateGroup { id: number; name: string; fakeMinute: number; isPrivate: number; memo: string; rateCount: number; }
-interface CsvRow { prefix: string; areacode: string; fee: string; tax: string; period: string; type: string; }
 interface RateResult { id: number; prefix: string; areacode: string; fee: number; tax: number; period: number; type: number; locktype: number; group_name: string; group_id: number; }
 
 export default function RateGroupPage() {
@@ -31,7 +33,7 @@ export default function RateGroupPage() {
   const [csvRows, setCsvRows] = useState<CsvRow[]>([]);
   const [csvFileName, setCsvFileName] = useState("");
   const [importing, setImporting] = useState(false);
-  const [importResult, setImportResult] = useState<{inserted:number;total:number;errors?:string[]}|null>(null);
+  const [importResult, setImportResult] = useState<{succeeded:number;failed:number;errors?:string[]}|null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   // ─── Global prefix search ───
@@ -56,6 +58,29 @@ export default function RateGroupPage() {
   const [bulkMoving, setBulkMoving] = useState(false);
   const [bulkMoveTargetGroupId, setBulkMoveTargetGroupId] = useState<number>(0);
   const [showBulkMoveModal, setShowBulkMoveModal] = useState(false);
+
+  // ─── Expandable group rates ───
+  const [expandedGroup, setExpandedGroup] = useState<number | null>(null);
+  const [groupRates, setGroupRates] = useState<RateResult[]>([]);
+  const [loadingRates, setLoadingRates] = useState(false);
+
+  const toggleExpandGroup = async (group: RateGroup) => {
+    if (expandedGroup === group.id) {
+      setExpandedGroup(null);
+      setGroupRates([]);
+      return;
+    }
+    setExpandedGroup(group.id);
+    setLoadingRates(true);
+    setGroupRates([]);
+    try {
+      const r = await window.fetch(`/api/vos/rates?groupId=${group.id}`);
+      const d = await r.json();
+      if (d.error) { setError(d.error); setGroupRates([]); }
+      else setGroupRates(d.rates || []);
+    } catch { setGroupRates([]); }
+    finally { setLoadingRates(false); }
+  };
 
   const fetchGroups = async () => {
     setLoading(true);
@@ -294,33 +319,18 @@ export default function RateGroupPage() {
     setBulkMoving(false);
   };
 
-  const parseCSV = (text: string) => {
-    const lines = text.trim().split(/\r?\n/);
-    if (lines.length < 2) { setError("CSV must have a header row and at least one data row"); return; }
-    const header = lines[0].toLowerCase().replace(/[^a-z,]/g,"").split(",");
-    const prefixIdx = header.findIndex(h=>h.includes("prefix"));
-    const areaIdx = header.findIndex(h=>h.includes("area")||h.includes("code"));
-    const feeIdx = header.findIndex(h=>h.includes("fee")||h.includes("rate")||h.includes("price"));
-    const taxIdx = header.findIndex(h=>h.includes("tax"));
-    const periodIdx = header.findIndex(h=>h.includes("period")||h.includes("cycle")||h.includes("billing"));
-    const typeIdx = header.findIndex(h=>h.includes("type"));
-    if (prefixIdx === -1) { setError("CSV must have a 'prefix' column"); return; }
-    const rows: CsvRow[] = [];
-    for (let i = 1; i < lines.length; i++) {
-      const cols = lines[i].split(",").map(c=>c.trim().replace(/^"|\"$/g,""));
-      if (cols.length > 0 && cols[prefixIdx]) {
-        rows.push({
-          prefix: cols[prefixIdx],
-          areacode: areaIdx >= 0 ? (cols[areaIdx] || "") : "",
-          fee: feeIdx >= 0 ? (cols[feeIdx] || "0.001") : "0.001",
-          tax: taxIdx >= 0 ? (cols[taxIdx] || "0") : "0",
-          period: periodIdx >= 0 ? (cols[periodIdx] || "60") : "60",
-          type: typeIdx >= 0 ? (cols[typeIdx] || "0") : "0",
-        });
-      }
-    }
-    if (rows.length === 0) { setError("No valid data rows found in CSV"); return; }
-    setCsvRows(rows);
+  // Wrap shared parser to call component setters
+  const handleParseExcel = (data: ArrayBuffer) => {
+    const result = parseExcel(data);
+    if ("error" in result) { setError(result.error); return; }
+    setCsvRows(result.rows);
+    setError("");
+  };
+
+  const handleParseCSV = (text: string) => {
+    const result = parseCSV(text);
+    if ("error" in result) { setError(result.error); return; }
+    setCsvRows(result.rows);
     setError("");
   };
 
@@ -329,9 +339,22 @@ export default function RateGroupPage() {
     if (!file) return;
     setCsvFileName(file.name);
     setImportResult(null);
+    setCsvRows([]);
+    setError("");
+    const ext = file.name.split(".").pop()?.toLowerCase();
     const reader = new FileReader();
-    reader.onload = (ev) => parseCSV(ev.target?.result as string);
-    reader.readAsText(file);
+
+    if (ext === "xls" || ext === "xlsx") {
+      reader.onload = (ev) => {
+        const data = ev.target?.result as ArrayBuffer;
+        if (!data) { setError("Failed to read file"); return; }
+        handleParseExcel(data);
+      };
+      reader.readAsArrayBuffer(file);
+    } else {
+      reader.onload = (ev) => handleParseCSV(ev.target?.result as string);
+      reader.readAsText(file);
+    }
   };
 
   const handleBulkImport = async () => {
@@ -346,10 +369,34 @@ export default function RateGroupPage() {
       if (d.error) setError(d.error);
       else {
         setImportResult(d);
-        if (d.inserted > 0) { fetchGroups(); setCsvRows([]); }
+        if (d.succeeded > 0) { fetchGroups(); setCsvRows([]); }
       }
     } catch { setError("Bulk import failed"); }
     finally { setImporting(false); }
+  };
+
+  const downloadTemplate = () => {
+    const wb = XLSX.utils.book_new();
+    const headers = ["Rate prefix", "Area prefix", "Billing rate", "Billing cycle", "Tax rate", "Rate type"];
+    const exampleRows = [
+      ["2000", "91", "0.017", "60", "0.0", "Standard"],
+      ["3000", "91", "0.0172", "60", "0.0", "Standard"],
+      ["4000", "44", "0.03", "30", "0.05", "Flat rate"],
+    ];
+    const ws = XLSX.utils.aoa_to_sheet([headers, ...exampleRows]);
+    // Set column widths for readability
+    ws["!cols"] = [
+      { wch: 14 }, { wch: 14 }, { wch: 14 }, { wch: 14 }, { wch: 10 }, { wch: 12 },
+    ];
+    XLSX.utils.book_append_sheet(wb, ws, "Rates");
+    const buf = XLSX.write(wb, { type: "array", bookType: "xlsx" });
+    const blob = new Blob([buf], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = "rate-import-template.xlsx";
+    a.click();
+    URL.revokeObjectURL(url);
   };
 
   return (
@@ -440,37 +487,159 @@ export default function RateGroupPage() {
         </div>
       )}
 
-      {/* Group Cards */}
-      {loading ? (
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">{Array.from({length:5}).map((_,i)=><div key={i} className="bg-surface-900 border border-surface-700/50 rounded-xl p-5"><div className="h-5 bg-surface-800 rounded w-32 mb-3 animate-pulse"/></div>)}</div>
-      ) : (
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-          {groups.map(g=>(
-            <div key={g.id} className="bg-surface-900 border border-surface-700/50 rounded-xl p-5 hover:border-surface-600/50 transition-colors">
-              <div className="flex items-start justify-between mb-3">
-                <div className="flex items-center gap-3">
-                  <div className="w-10 h-10 rounded-lg bg-brand-500/10 flex items-center justify-center"><Layers className="w-5 h-5 text-brand-400"/></div>
-                  <div><h3 className="text-base font-semibold text-surface-50">{g.name}</h3><p className="text-xs text-surface-500">ID: {g.id}</p></div>
-                </div>
-                <div className="flex items-center gap-1">
-                  {g.isPrivate===1 && <span className="flex items-center gap-1 px-2 py-0.5 rounded text-xs bg-amber-500/10 text-amber-400"><Shield className="w-3 h-3"/>Pvt</span>}
-                  <button onClick={() => openEditGroup(g)} className="p-1.5 rounded hover:bg-surface-700 text-surface-400 hover:text-surface-50" title="Edit group"><Edit2 className="w-3.5 h-3.5" /></button>
-                  <button onClick={() => handleDeleteGroup(g)} className="p-1.5 rounded hover:bg-red-500/10 text-surface-400 hover:text-red-400" title="Delete group"><Trash2 className="w-3.5 h-3.5" /></button>
-                </div>
-              </div>
-              <div className="grid grid-cols-2 gap-3 text-sm mb-4">
-                <div><span className="text-surface-500 text-xs">Rates</span><p className="text-surface-50 font-mono">{g.rateCount}</p></div>
-                <div><span className="text-surface-500 text-xs">Increment</span><p className="text-surface-50 font-mono">{g.fakeMinute}s</p></div>
-              </div>
-              {g.memo && <p className="text-xs text-surface-500 border-t border-surface-800 pt-3 mb-3">{g.memo}</p>}
-              <div className="space-y-2">
-                <button onClick={() => openAddModal(g.id)} className="w-full flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg bg-emerald-600/10 border border-emerald-500/20 text-emerald-400 hover:bg-emerald-600/20 transition-colors text-sm font-medium"><Plus className="w-4 h-4"/>Add New Rate</button>
-                <button onClick={() => openBulkModal(g.id)} className="w-full flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg bg-violet-600/10 border border-violet-500/20 text-violet-400 hover:bg-violet-600/20 transition-colors text-sm font-medium"><Upload className="w-4 h-4"/>Bulk CSV Import</button>
-              </div>
-            </div>
-          ))}
+      {/* Rate Groups Table */}
+      <div className="bg-surface-900 border border-surface-700/50 rounded-xl overflow-hidden">
+        <div className="overflow-x-auto">
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="border-b border-surface-800">
+                <th className="text-left px-4 py-3 text-surface-400 font-medium text-xs uppercase tracking-wider w-12">#</th>
+                <th className="text-left px-4 py-3 text-surface-400 font-medium text-xs uppercase tracking-wider">Group Name</th>
+                <th className="text-right px-4 py-3 text-surface-400 font-medium text-xs uppercase tracking-wider w-20">Rates</th>
+                <th className="text-right px-4 py-3 text-surface-400 font-medium text-xs uppercase tracking-wider w-24">Increment</th>
+                <th className="text-center px-4 py-3 text-surface-400 font-medium text-xs uppercase tracking-wider w-20">Privacy</th>
+                <th className="text-center px-4 py-3 text-surface-400 font-medium text-xs uppercase tracking-wider w-32">Actions</th>
+              </tr>
+            </thead>
+            <tbody>
+              {loading ? Array.from({ length: 5 }).map((_, i) => (
+                <tr key={i} className="border-b border-surface-800/50">
+                  {Array.from({ length: 6 }).map((_, j) => (
+                    <td key={j} className="px-4 py-3"><div className="h-4 bg-surface-800 rounded animate-pulse" /></td>
+                  ))}
+                </tr>
+              )) : groups.length === 0 ? (
+                <tr>
+                  <td colSpan={6} className="px-4 py-12 text-center text-surface-500">
+                    <Layers className="w-10 h-10 mx-auto mb-2 text-surface-600" />
+                    <p>No rate groups yet — click "Add Group" to create one</p>
+                  </td>
+                </tr>
+              ) : groups.map((g, i) => {
+                const isExpanded = expandedGroup === g.id;
+                return (
+                <React.Fragment key={g.id}>
+                <tr
+                  onClick={() => toggleExpandGroup(g)}
+                  className={`border-b border-surface-800/50 transition-colors hover:bg-surface-800/30 cursor-pointer ${i % 2 === 0 ? "bg-surface-800/10" : ""} ${isExpanded ? "bg-brand-500/5 border-brand-500/20" : ""}`}
+                >
+                  <td className="px-4 py-3 text-surface-500 text-xs font-mono">
+                    <ChevronDown className={`w-3.5 h-3.5 inline-block transition-transform ${isExpanded ? "rotate-180" : ""}`} />
+                  </td>
+                  <td className="px-4 py-3">
+                    <div className="flex items-center gap-2">
+                      <div className="w-8 h-8 rounded-lg bg-brand-500/10 flex items-center justify-center flex-shrink-0">
+                        <Layers className="w-4 h-4 text-brand-400" />
+                      </div>
+                      <div className="min-w-0">
+                        <div className="text-surface-50 font-medium text-sm">{g.name}</div>
+                        {g.memo && <div className="text-surface-500 text-xs truncate max-w-[200px]">{g.memo}</div>}
+                      </div>
+                    </div>
+                  </td>
+                  <td className="px-4 py-3 text-right">
+                    <span className="text-surface-50 font-mono text-sm font-bold">{g.rateCount}</span>
+                  </td>
+                  <td className="px-4 py-3 text-right">
+                    <span className="text-surface-300 font-mono text-xs">{g.fakeMinute}s</span>
+                  </td>
+                  <td className="px-4 py-3 text-center">
+                    {g.isPrivate === 1 ? (
+                      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-xs bg-amber-500/10 text-amber-400">
+                        <Shield className="w-3 h-3" />Private
+                      </span>
+                    ) : (
+                      <span className="text-xs text-surface-500">Public</span>
+                    )}
+                  </td>
+                  <td className="px-4 py-3" onClick={e => e.stopPropagation()}>
+                    <div className="flex items-center justify-center gap-1 flex-wrap">
+                      <button onClick={() => openAddModal(g.id)}
+                        className="flex items-center gap-1 px-2 py-1 rounded bg-emerald-600/10 border border-emerald-500/20 text-emerald-400 hover:bg-emerald-600/20 text-xs font-medium transition-colors"
+                        title="Add rate">
+                        <Plus className="w-3 h-3" />Rate
+                      </button>
+                      <button onClick={() => openBulkModal(g.id)}
+                        className="flex items-center gap-1 px-2 py-1 rounded bg-violet-600/10 border border-violet-500/20 text-violet-400 hover:bg-violet-600/20 text-xs font-medium transition-colors"
+                        title="Bulk import">
+                        <Upload className="w-3 h-3" />Import
+                      </button>
+                      <button onClick={() => openEditGroup(g)}
+                        className="p-1.5 rounded hover:bg-surface-700 text-surface-400 hover:text-surface-50 transition-colors"
+                        title="Edit group">
+                        <Edit2 className="w-3.5 h-3.5" />
+                      </button>
+                      <button onClick={() => handleDeleteGroup(g)}
+                        className="p-1.5 rounded hover:bg-red-500/10 text-surface-400 hover:text-red-400 transition-colors"
+                        title="Delete group">
+                        <Trash2 className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
+                  </td>
+                </tr>
+                {/* Expandable rates sub-table */}
+                {isExpanded && (
+                  <tr key={`${g.id}-rates`} className="bg-surface-800/20">
+                    <td colSpan={6} className="px-4 py-0">
+                      {loadingRates ? (
+                        <div className="flex items-center justify-center py-6 gap-2">
+                          <Loader2 className="w-4 h-4 text-brand-400 animate-spin" />
+                          <span className="text-xs text-surface-400">Loading rates...</span>
+                        </div>
+                      ) : groupRates.length === 0 ? (
+                        <div className="py-6 text-center text-surface-500 text-xs">
+                          No rates in this group yet — click <span className="text-emerald-400">Rate</span> to add one
+                        </div>
+                      ) : (
+                        <div className="overflow-x-auto py-2">
+                          <table className="w-full text-xs">
+                            <thead>
+                              <tr className="border-b border-surface-700/50">
+                                <th className="text-left px-3 py-2 text-surface-500 font-medium">Prefix</th>
+                                <th className="text-left px-3 py-2 text-surface-500 font-medium">Area</th>
+                                <th className="text-right px-3 py-2 text-surface-500 font-medium">Fee</th>
+                                <th className="text-right px-3 py-2 text-surface-500 font-medium">Tax</th>
+                                <th className="text-right px-3 py-2 text-surface-500 font-medium">Period</th>
+                                <th className="text-left px-3 py-2 text-surface-500 font-medium">Type</th>
+                                <th className="text-center px-3 py-2 text-surface-500 font-medium w-24">Actions</th>
+                              </tr>
+                            </thead>
+                            <tbody className="divide-y divide-surface-700/30">
+                              {groupRates.map(r => (
+                                <tr key={r.id} className="hover:bg-surface-700/20">
+                                  <td className="px-3 py-2 text-surface-50 font-mono">{r.prefix}</td>
+                                  <td className="px-3 py-2 text-surface-300">{r.areacode || "—"}</td>
+                                  <td className="px-3 py-2 text-right text-emerald-400 font-mono">${r.fee.toFixed(6)}</td>
+                                  <td className="px-3 py-2 text-right text-surface-300">{r.tax || "0"}</td>
+                                  <td className="px-3 py-2 text-right text-surface-300">{r.period}s</td>
+                                  <td className="px-3 py-2"><span className="px-1.5 py-0.5 rounded text-[10px] bg-surface-700 text-surface-400">{r.type===0?"Std":r.type===1?"Flat":"T"+r.type}</span></td>
+                                  <td className="px-3 py-2 text-center">
+                                    <div className="flex items-center justify-center gap-1">
+                                      <button onClick={() => openEditRateModal(r)} className="p-1 rounded hover:bg-surface-600 text-surface-400 hover:text-brand-400" title="Edit"><Edit3 className="w-3 h-3" /></button>
+                                      <button onClick={() => handleDeleteRate(r)} disabled={deletingId === r.id} className="p-1 rounded hover:bg-red-500/10 text-surface-400 hover:text-red-400 disabled:opacity-50" title="Delete">{deletingId === r.id ? <Loader2 className="w-3 h-3 animate-spin" /> : <Trash2 className="w-3 h-3" />}</button>
+                                    </div>
+                                  </td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        </div>
+                      )}
+                    </td>
+                  </tr>
+                )}
+                </React.Fragment>
+              );
+              })}
+            </tbody>
+          </table>
         </div>
-      )}
+        {!loading && groups.length > 0 && (
+          <div className="px-4 py-2 border-t border-surface-800 text-xs text-surface-500">
+            {groups.length} rate groups · {groups.reduce((s,g) => s + g.rateCount, 0)} total rates
+          </div>
+        )}
+      </div>
 
       {/* ─── Add/Edit Group Modal ─── */}
       {showGroupModal && (
@@ -690,20 +859,26 @@ export default function RateGroupPage() {
             <div className="flex items-center justify-between px-6 py-4 border-b border-surface-800 flex-shrink-0">
               <div className="flex items-center gap-3">
                 <div className="w-10 h-10 rounded-lg bg-violet-500/10 flex items-center justify-center"><Upload className="w-5 h-5 text-violet-400"/></div>
-                <div><h2 className="text-lg font-semibold text-surface-50">Bulk CSV Import</h2><p className="text-xs text-surface-500">Group: {groups.find(g=>g.id===bulkGroupId)?.name||"—"} | Max 500 rows</p></div>
+                <div><h2 className="text-lg font-semibold text-surface-50">Bulk Import</h2><p className="text-xs text-surface-500">Group: {groups.find(g=>g.id===bulkGroupId)?.name||"—"} | Max 500 rows</p></div>
               </div>
               <button onClick={()=>setShowBulkModal(false)} className="p-1.5 rounded-lg hover:bg-surface-800 text-surface-500 hover:text-surface-50"><X className="w-5 h-5"/></button>
             </div>
             <div className="px-6 py-4 space-y-4 overflow-y-auto flex-1">
               <div className="p-3 rounded-lg bg-surface-800/50 border border-surface-700/30 text-xs text-surface-400">
-                <p className="font-medium text-surface-300 mb-1">CSV Format:</p>
+                <div className="flex items-center justify-between mb-1">
+                  <p className="font-medium text-surface-300">CSV / Excel Format:</p>
+                  <button onClick={downloadTemplate} className="flex items-center gap-1.5 px-2.5 py-1 rounded-md bg-brand-500/10 border border-brand-500/20 text-brand-400 hover:bg-brand-500/20 text-[11px] font-medium transition-colors" title="Download sample XLSX template">
+                    <Download className="w-3 h-3" />
+                    Template
+                  </button>
+                </div>
                 <code className="text-brand-400">prefix,areacode,fee,tax,period,type</code>
                 <p className="mt-1">Columns are auto-detected by header name. Only <b>prefix</b> is required.</p>
               </div>
               <div>
-                <input ref={fileInputRef} type="file" accept=".csv" onChange={handleFileUpload} className="hidden" />
+                <input ref={fileInputRef} type="file" accept=".csv,.xls,.xlsx" onChange={handleFileUpload} className="hidden" />
                 <button onClick={()=>fileInputRef.current?.click()} className="w-full flex items-center justify-center gap-3 p-6 rounded-xl border-2 border-dashed border-surface-700 hover:border-violet-500/50 text-surface-400 hover:text-violet-400 transition-colors">
-                  <FileUp className="w-8 h-8"/><div className="text-left"><p className="font-medium">{csvFileName || "Click to upload CSV file"}</p><p className="text-xs text-surface-500">{csvFileName ? `${csvRows.length} rows parsed` : ".csv files only"}</p></div>
+                  <FileUp className="w-8 h-8"/><div className="text-left">                  <p className="font-medium">{csvFileName || "Click to upload CSV or Excel file"}</p><p className="text-xs text-surface-500">{csvFileName ? `${csvRows.length} rows parsed` : ".csv, .xls, .xlsx supported"}</p></div>
                 </button>
               </div>
               {csvRows.length > 0 && (
@@ -724,7 +899,7 @@ export default function RateGroupPage() {
               )}
               {importResult && (
                 <div className={`p-4 rounded-xl ${importResult.errors?.length ? "bg-amber-500/10 border border-amber-500/20" : "bg-emerald-500/10 border border-emerald-500/20"}`}>
-                  <p className={`text-sm font-medium ${importResult.errors?.length ? "text-amber-400" : "text-emerald-400"}`}>✓ Imported {importResult.inserted} of {importResult.total} rates</p>
+                  <p className={`text-sm font-medium ${(importResult.errors?.length || importResult.failed > 0) ? "text-amber-400" : "text-emerald-400"}`}>✓ Imported {importResult.succeeded} of {importResult.succeeded + importResult.failed} rates{(importResult.failed > 0) ? ` (${importResult.failed} failed)` : ""}</p>
                   {importResult.errors && importResult.errors.length > 0 && <div className="mt-2 space-y-1">{importResult.errors.slice(0,5).map((e,i)=><p key={i} className="text-xs text-red-400">{e}</p>)}</div>}
                 </div>
               )}

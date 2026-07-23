@@ -37,6 +37,10 @@ export async function PUT(request: NextRequest) {
     if (body.money !== undefined) { fields.push("money = ?"); values.push(Number(body.money)); }
     if (body.limitMoney !== undefined) { fields.push("limitmoney = ?"); values.push(Number(body.limitMoney)); }
     if (body.name !== undefined) { fields.push("name = ?"); values.push(String(body.name)); }
+    if (body.account !== undefined) { fields.push("account = ?"); values.push(String(body.account)); }
+    if (body.rate !== undefined) { fields.push("rate = ?"); values.push(Number(body.rate)); }
+    if (body.parentId !== undefined) { fields.push("parent_id = ?"); values.push(Number(body.parentId)); }
+    if (body.memo !== undefined) { fields.push("memo = ?"); values.push(String(body.memo)); }
 
     if (fields.length === 0) return NextResponse.json({ error: "No fields to update" }, { status: 400 });
     values.push(Number(id));
