@@ -69,12 +69,12 @@ fi
 
 # ── SSL Certificate ─────────────────────────
 CERT_DIR="/etc/pki/tls"
-if [ ! -f "${CERT_DIR}/private/net2app.key" ]; then
+if [ ! -f "${CERT_DIR}/private/vos-billing.key" ]; then
     log "Generating self-signed SSL (replace with Let's Encrypt)..."
     mkdir -p "${CERT_DIR}/certs" "${CERT_DIR}/private"
     openssl req -x509 -nodes -days 365 -newkey rsa:2048 \
-        -keyout "${CERT_DIR}/private/net2app.key" \
-        -out "${CERT_DIR}/certs/net2app.crt" \
+        -keyout "${CERT_DIR}/private/vos-billing.key" \
+        -out "${CERT_DIR}/certs/vos-billing.crt" \
         -subj "/C=US/ST=NY/L=NewYork/O=net2app/CN=net2app.com" 2>/dev/null
     log "SSL cert created"
 fi
