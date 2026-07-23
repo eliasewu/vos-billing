@@ -41,6 +41,7 @@ export default function RateWizardPage() {
   const [customerSearch, setCustomerSearch] = useState("");
   const [selectedRateGroup, setSelectedRateGroup] = useState<number>(0);
   const [countryFilter, setCountryFilter] = useState("");
+  const [operatorSearch, setOperatorSearch] = useState("");
 
   // Table state
   const [operatorRows, setOperatorRows] = useState<Map<number, OperatorRow>>(new Map());
@@ -106,6 +107,17 @@ export default function RateWizardPage() {
     return mccmnc.filter(e => e.country === countryFilter);
   }, [mccmnc, countryFilter]);
 
+  // Further filter operators by search text (operator name, MCC, MNC)
+  const displayedOperators = useMemo(() => {
+    if (!operatorSearch.trim()) return filteredOperators;
+    const s = operatorSearch.toLowerCase();
+    return filteredOperators.filter(op =>
+      op.operator.toLowerCase().includes(s) ||
+      op.mcc.toLowerCase().includes(s) ||
+      op.mnc.toLowerCase().includes(s)
+    );
+  }, [filteredOperators, operatorSearch]);
+
   // Click outside to close customer dropdown
   useEffect(() => {
     if (!showCustomerDropdown) return;
@@ -117,15 +129,14 @@ export default function RateWizardPage() {
     return () => document.removeEventListener("mousedown", handler);
   }, [showCustomerDropdown]);
 
-  // Initialize/reset rows when filtered operators change (use functional updater to avoid stale closure)
+  // Initialize/reset rows when displayed operators change (use functional updater to avoid stale closure)
   useEffect(() => {
-    if (filteredOperators.length === 0) {
-      setOperatorRows(new Map());
+    if (displayedOperators.length === 0) {
       return;
     }
     setOperatorRows((prev: Map<number, OperatorRow>) => {
       const newRows = new Map<number, OperatorRow>();
-      for (const op of filteredOperators) {
+      for (const op of displayedOperators) {
         const existing = prev.get(op.id);
         const pfx = prefixMap.get(op.id) || "";
         const ac = getOperatorAreacode(op, pfx);
@@ -152,7 +163,7 @@ export default function RateWizardPage() {
       }
       return newRows;
     });
-  }, [filteredOperators, prefixMap, areacodes, defaultFee, defaultTax, defaultPeriod]);
+  }, [displayedOperators, prefixMap, areacodes, defaultFee, defaultTax, defaultPeriod]);
 
   // Combined areacode lookup: Set for existence checks + Map for name tooltips
   const { areacodeSet, areacodeToName } = useMemo(() => {
@@ -233,7 +244,7 @@ export default function RateWizardPage() {
     [operatorRows]
   );
 
-  const allSelected = selectedCount === filteredOperators.length && filteredOperators.length > 0;
+  const allSelected = selectedCount === displayedOperators.length && displayedOperators.length > 0;
 
   const toggleAll = () => {
     setOperatorRows(prev => {
@@ -444,7 +455,7 @@ export default function RateWizardPage() {
               </label>
               <select
                 value={countryFilter}
-                onChange={e => setCountryFilter(e.target.value)}
+                onChange={e => { setCountryFilter(e.target.value); setOperatorSearch(""); }}
                 className="w-full px-3 py-2.5 bg-surface-800 border border-surface-700/50 rounded-lg text-sm text-surface-50 focus:outline-none focus:border-emerald-500/50"
               >
                 <option value="">All countries</option>
@@ -503,11 +514,24 @@ export default function RateWizardPage() {
             <div className="bg-surface-900 border border-surface-700/50 rounded-xl overflow-hidden">
               {/* Table header */}
               <div className="flex items-center justify-between px-5 py-3 border-b border-surface-800">
-                <h2 className="text-sm font-semibold text-surface-50 flex items-center gap-2">
-                  <Table2 className="w-4 h-4 text-brand-400" />
-                  Operators — {countryFilter}
-                  <span className="text-surface-500 font-normal text-xs">({filteredOperators.length} total)</span>
-                </h2>
+                <div className="flex items-center gap-3">
+                  <h2 className="text-sm font-semibold text-surface-50 flex items-center gap-2">
+                    <Table2 className="w-4 h-4 text-brand-400" />
+                    Operators — {countryFilter}
+                    <span className="text-surface-500 font-normal text-xs">({filteredOperators.length} total{operatorSearch ? `, ${displayedOperators.length} shown` : ""})</span>
+                  </h2>
+                  {/* Operator search */}
+                  <div className="relative">
+                    <Search className="absolute left-2 top-1/2 -translate-y-1/2 w-3 h-3 text-surface-500" />
+                    <input
+                      type="text"
+                      placeholder="Search operator..."
+                      value={operatorSearch}
+                      onChange={e => setOperatorSearch(e.target.value)}
+                      className="pl-7 pr-3 py-1 w-44 text-xs bg-surface-800 border border-surface-700 rounded-lg text-surface-50 focus:outline-none focus:border-violet-500/50"
+                    />
+                  </div>
+                </div>
                 <button onClick={toggleAll} className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium border transition-colors"
                   style={{
                     borderColor: allSelected ? "rgb(167 139 250 / 0.5)" : "rgb(51 65 85 / 0.5)",
@@ -534,15 +558,21 @@ export default function RateWizardPage() {
                     </tr>
                   </thead>
                   <tbody>
-                    {filteredOperators.length === 0 ? (
+                    {displayedOperators.length === 0 && !operatorSearch ? (
                       <tr>
                         <td colSpan={8} className="text-center py-12 text-surface-500">
                           <Radio className="w-8 h-8 mx-auto mb-2 opacity-30" />
                           No operators found for this country
                         </td>
                       </tr>
+                    ) : displayedOperators.length === 0 && operatorSearch ? (
+                      <tr>
+                        <td colSpan={8} className="text-center py-8 text-surface-500 text-sm">
+                          No operators match "{operatorSearch}"
+                        </td>
+                      </tr>
                     ) : (
-                      filteredOperators.map((op, i) => {
+                      displayedOperators.map((op, i) => {
                         const row = operatorRows.get(op.id);
                         if (!row) return null;
                         return (
@@ -636,11 +666,16 @@ export default function RateWizardPage() {
               </div>
 
               {/* Footer */}
+              {displayedOperators.length > 0 && (
               <div className="px-5 py-3 bg-surface-800/20 border-t border-surface-800 flex items-center justify-between text-xs">
                 <span className="text-surface-500">
-                  {selectedCount} of {filteredOperators.length} operators selected
+                  {selectedCount} of {displayedOperators.length} operators selected
+                  {operatorSearch && displayedOperators.length < filteredOperators.length && (
+                    <span className="text-surface-600"> (filtered from {filteredOperators.length})</span>
+                  )}
                 </span>
               </div>
+              )}
             </div>
           )}
 

@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState, useCallback, useMemo } from "react";
-import { DollarSign, ChevronDown, ChevronRight, RefreshCw, Shield, Edit3, Save, X, Settings2, Plus, Trash2, Zap, Loader2 } from "lucide-react";
+import { DollarSign, ChevronDown, ChevronRight, RefreshCw, Shield, Edit3, Save, X, Settings2, Plus, Trash2, Zap, Loader2, Search, Square, CheckSquare } from "lucide-react";
 import { safeErrorString } from "@/lib/utils";
 
 interface RateGroup {
@@ -65,6 +65,9 @@ export default function RatesPage() {
   const [deletingId, setDeletingId] = useState<number | null>(null);
   const [applying, setApplying] = useState(false);
   const [success, setSuccess] = useState("");
+  const [rateSearch, setRateSearch] = useState("");
+  const [selectedRateIds, setSelectedRateIds] = useState<Set<number>>(new Set());
+  const [bulkDeleting, setBulkDeleting] = useState(false);
 
   // Areacode lookup for prefix → area code auto-fill
   const [areacodes, setAreacodes] = useState<{ areacode: string; location: string }[]>([]);
@@ -244,6 +247,53 @@ export default function RatesPage() {
     finally { setDeletingId(null); }
   };
 
+  const toggleRateSelect = (id: number) => {
+    setSelectedRateIds(prev => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id); else next.add(id);
+      return next;
+    });
+  };
+
+  const toggleAllRates = () => {
+    const filtered = getFilteredRates();
+    if (selectedRateIds.size === filtered.length) {
+      setSelectedRateIds(new Set());
+    } else {
+      setSelectedRateIds(new Set(filtered.map(r => r.id)));
+    }
+  };
+
+  const handleBulkDelete = async () => {
+    const count = selectedRateIds.size;
+    if (count === 0 || !confirm(`Delete ${count} selected rates?`)) return;
+    setBulkDeleting(true);
+    let deleted = 0;
+    for (const id of selectedRateIds) {
+      try {
+        const res = await fetch(`/api/vos/rates?id=${id}`, { method: "DELETE" });
+        const data = await res.json();
+        if (!data.error) deleted++;
+      } catch { /* continue */ }
+    }
+    setBulkDeleting(false);
+    setSelectedRateIds(new Set());
+    setSuccess(`Deleted ${deleted} of ${count} rates`);
+    setTimeout(() => setSuccess(""), 4000);
+    if (expandedGroup) fetchRates(expandedGroup);
+    fetchGroups();
+  };
+
+  const getFilteredRates = () => {
+    if (!rateSearch.trim()) return rates;
+    const s = rateSearch.toLowerCase();
+    return rates.filter(r =>
+      r.prefix.toLowerCase().includes(s) ||
+      (r.areacode || "").toLowerCase().includes(s) ||
+      (r.area_name || "").toLowerCase().includes(s)
+    );
+  };
+
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
@@ -374,15 +424,39 @@ export default function RatesPage() {
               {/* Rates Table */}
               {expandedGroup === group.id && (
                 <div className="border-t border-surface-700/50">
-                  <div className="px-5 py-3 bg-surface-800/20 flex items-center justify-between">
+                  <div className="px-5 py-3 bg-surface-800/20 flex items-center justify-between gap-3 flex-wrap">
                     <span className="text-xs text-surface-500">{rates.length} rates</span>
-                    <button
-                      onClick={() => setShowAddModal(true)}
-                      className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium bg-emerald-600/10 text-emerald-400 hover:bg-emerald-600/20 transition-colors"
-                    >
-                      <Plus className="w-3.5 h-3.5" />
-                      Add Rate
-                    </button>
+                    <div className="flex items-center gap-2">
+                      {/* Search */}
+                      <div className="relative">
+                        <Search className="w-3.5 h-3.5 absolute left-2.5 top-1/2 -translate-y-1/2 text-surface-500" />
+                        <input
+                          type="text"
+                          placeholder="Search prefix/area..."
+                          value={rateSearch}
+                          onChange={(e) => { setRateSearch(e.target.value); setSelectedRateIds(new Set()); }}
+                          className="pl-8 pr-3 py-1.5 w-40 text-xs bg-surface-800 border border-surface-700 rounded-lg text-surface-50 focus:outline-none focus:border-cyan-500"
+                        />
+                      </div>
+                      {/* Bulk Delete */}
+                      {selectedRateIds.size > 0 && (
+                        <button
+                          onClick={handleBulkDelete}
+                          disabled={bulkDeleting}
+                          className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs font-medium bg-red-600/10 text-red-400 hover:bg-red-600/20 transition-colors"
+                        >
+                          {bulkDeleting ? <Loader2 className="w-3 h-3 animate-spin" /> : <Trash2 className="w-3 h-3" />}
+                          Delete {selectedRateIds.size}
+                        </button>
+                      )}
+                      <button
+                        onClick={() => setShowAddModal(true)}
+                        className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium bg-emerald-600/10 text-emerald-400 hover:bg-emerald-600/20 transition-colors"
+                      >
+                        <Plus className="w-3.5 h-3.5" />
+                        Add Rate
+                      </button>
+                    </div>
                   </div>
                   {loadingRates ? (
                     <div className="flex items-center justify-center py-12">
@@ -393,10 +467,21 @@ export default function RatesPage() {
                       No rates in this group
                     </p>
                   ) : (
+                    (() => {
+                      const filteredRates = getFilteredRates();
+                      const allChecked = filteredRates.length > 0 && selectedRateIds.size === filteredRates.length;
+                      return filteredRates.length === 0 ? (
+                        <p className="text-surface-500 text-sm text-center py-6">No rates match "{rateSearch}"</p>
+                      ) : (
                     <div className="overflow-x-auto">
                       <table className="w-full text-sm">
                         <thead>
                           <tr className="bg-surface-800/30 border-b border-surface-700/50">
+                            <th className="px-3 py-2.5 w-8">
+                              <button onClick={toggleAllRates} className="text-surface-500 hover:text-surface-300">
+                                {allChecked ? <CheckSquare className="w-4 h-4 text-cyan-400" /> : <Square className="w-4 h-4" />}
+                              </button>
+                            </th>
                             <th className="px-3 py-2.5 text-left text-[11px] font-semibold uppercase text-surface-400">#</th>
                             <th className="px-3 py-2.5 text-left text-[11px] font-semibold uppercase text-surface-400">Prefix</th>
                             <th className="px-3 py-2.5 text-left text-[11px] font-semibold uppercase text-surface-400">Area Code / Name</th>
@@ -413,8 +498,13 @@ export default function RatesPage() {
                           </tr>
                         </thead>
                         <tbody className="divide-y divide-surface-800">
-                          {rates.map((r, i) => (
+                          {filteredRates.map((r, i) => (
                             <tr key={r.id} className={`hover:bg-surface-800/30 transition-colors ${r.locktype !== 0 ? "bg-red-500/5" : ""}`}>
+                              <td className="px-3 py-2.5">
+                                <button onClick={() => toggleRateSelect(r.id)} className="text-surface-500 hover:text-surface-300">
+                                  {selectedRateIds.has(r.id) ? <CheckSquare className="w-3.5 h-3.5 text-cyan-400" /> : <Square className="w-3.5 h-3.5" />}
+                                </button>
+                              </td>
                               <td className="px-3 py-2.5 text-surface-500 font-mono text-[11px]">{i + 1}</td>
                               <td className="px-3 py-2.5 font-mono text-emerald-400 font-medium text-xs">
                                 {r.prefix}
@@ -509,6 +599,8 @@ export default function RatesPage() {
                         </tbody>
                       </table>
                     </div>
+                  );
+                    })()
                   )}
                 </div>
               )}
