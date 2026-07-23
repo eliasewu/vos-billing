@@ -2,7 +2,7 @@
 # =============================================================================
 # VOS3000 Billing Platform — One-Line Installer
 # Usage:
-#   curl -sSL https://raw.githubusercontent.com/eliasewu/vos-billing/main/install.sh | bash
+#   curl -sSL https://raw.githubusercontent.com/eliasewu/vos-billing/main/vos-billing/install.sh | bash
 # =============================================================================
 
 REPO_URL="https://github.com/eliasewu/vos-billing.git"
