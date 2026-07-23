@@ -13,6 +13,8 @@ export async function PUT(
     const { id } = await params;
     const body = await request.json();
 
+    const gwId = parseInt(id);
+
     await executeVos(
       `UPDATE e_gatewaymapping SET
         name = ?, password = ?, customerpassword = ?, locktype = ?, calllevel = ?,
@@ -35,9 +37,66 @@ export async function PUT(
         body.memo || "",
         body.customerId ?? 0,
         body.mbxId ?? 0,
-        parseInt(id),
+        gwId,
       ]
     );
+
+    // Update e_gatewaymappingsetting
+    try {
+      await executeVos(
+        `UPDATE e_gatewaymappingsetting SET
+          calloutcallerprefixesallow = ?, calloutcallerprefixes = ?,
+          calloutcalleeprefixesallow = ?, calloutcalleeprefixes = ?,
+          rewriterulesoutcallee = ?, rewriterulesoutcaller = ?,
+          callerblacklistpolicy = ?, calleeblacklistpolicy = ?,
+          calloutroutinggateways = ?,
+          sipcodecs = ?, h323codecs = ?,
+          dtmfreceivemethod = ?, dtmfsendmethodsip = ?,
+          mediacheckdirection = ?, timeoutcallproceeding = ?,
+          maxcalldurationlower = ?, maxcalldurationupper = ?,
+          scheduledcalloutprefixes = ?, scheduledrewriterulesout = ?, scheduledcapacity = ?
+         WHERE gatewaymapping_id = ?`,
+        [
+          body.calloutCallerPrefixesAllow ?? 1, body.calloutCallerPrefixes || "",
+          body.calloutCalleePrefixesAllow ?? 1, body.calloutCalleePrefixes || "",
+          body.rewriteRulesOutCallee || "", body.rewriteRulesOutCaller || "",
+          body.callerBlacklistPolicy ?? 0, body.calleeBlacklistPolicy ?? 0,
+          body.calloutRoutingGateways || "",
+          body.sipCodecs || "", body.h323Codecs || "",
+          body.dtmfReceiveMethod ?? 0, body.dtmfSendMethodSip ?? 0,
+          body.mediaCheckDirection ?? 0, body.timeoutCallProceeding ?? 30,
+          body.maxCallDurationLower ?? 0, body.maxCallDurationUpper ?? 0,
+          body.scheduledCalloutPrefixes || "", body.scheduledRewriteRulesOut || "",
+          body.scheduledCapacity || "",
+          gwId,
+        ]
+      );
+    } catch {
+      await executeVos(
+        `INSERT INTO e_gatewaymappingsetting (gatewaymapping_id, calloutcallerprefixesallow, calloutcallerprefixes,
+          calloutcalleeprefixesallow, calloutcalleeprefixes,
+          rewriterulesoutcallee, rewriterulesoutcaller,
+          callerblacklistpolicy, calleeblacklistpolicy, calloutroutinggateways,
+          sipcodecs, h323codecs, dtmfreceivemethod, dtmfsendmethodsip,
+          mediacheckdirection, timeoutcallproceeding,
+          maxcalldurationlower, maxcalldurationupper,
+          scheduledcalloutprefixes, scheduledrewriterulesout, scheduledcapacity)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        [gwId,
+          body.calloutCallerPrefixesAllow ?? 1, body.calloutCallerPrefixes || "",
+          body.calloutCalleePrefixesAllow ?? 1, body.calloutCalleePrefixes || "",
+          body.rewriteRulesOutCallee || "", body.rewriteRulesOutCaller || "",
+          body.callerBlacklistPolicy ?? 0, body.calleeBlacklistPolicy ?? 0,
+          body.calloutRoutingGateways || "",
+          body.sipCodecs || "", body.h323Codecs || "",
+          body.dtmfReceiveMethod ?? 0, body.dtmfSendMethodSip ?? 0,
+          body.mediaCheckDirection ?? 0, body.timeoutCallProceeding ?? 30,
+          body.maxCallDurationLower ?? 0, body.maxCallDurationUpper ?? 0,
+          body.scheduledCalloutPrefixes || "", body.scheduledRewriteRulesOut || "",
+          body.scheduledCapacity || "",
+        ]
+      );
+    }
 
     return NextResponse.json({ success: true });
   } catch (e) {
