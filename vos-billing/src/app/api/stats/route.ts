@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { queryVos } from "@/lib/vos-db";
 import { mapEndreason } from "@/lib/vos-utils";
+import { deepSanitize } from "@/lib/utils";
 
 export async function GET(request: NextRequest) {
   try {
@@ -244,7 +245,7 @@ export async function GET(request: NextRequest) {
       }));
     } catch { /* billing table may not exist yet */ }
 
-    return NextResponse.json({
+    return NextResponse.json(deepSanitize({
       clientCount,
       supplierCount: 0,
       totalCalls,
@@ -269,7 +270,7 @@ export async function GET(request: NextRequest) {
       periodNetProfit,
       periodPendingAmount,
       financialByPeriod,
-    });
+    }) as any);
   } catch (error) {
     console.error("Stats API error:", error);
     return NextResponse.json({

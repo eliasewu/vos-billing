@@ -25,14 +25,19 @@ export function getVosPool(): mysql.Pool {
   return pool;
 }
 
-/** Convert Buffer values from mysql2 to strings/numbers to prevent
- *  {type:"Buffer",data:[...]} JSON serialization that crashes React. */
+/** Convert Buffer values and {type:"Buffer",data:[...]} objects from mysql2
+ *  to strings/numbers to prevent React error #31. */
 function sanitizeRow(row: unknown): unknown {
   if (Buffer.isBuffer(row)) return row.toString();
   if (Array.isArray(row)) return row.map(sanitizeRow);
   if (row !== null && typeof row === "object") {
+    const obj = row as Record<string, unknown>;
+    // Detect {type:"Buffer", data:[...]} shape from mysql2 serialization
+    if (obj.type === "Buffer" && Array.isArray(obj.data)) {
+      return Buffer.from(obj.data as number[]).toString("utf-8");
+    }
     const out: Record<string, unknown> = {};
-    for (const [k, v] of Object.entries(row as Record<string, unknown>)) {
+    for (const [k, v] of Object.entries(obj)) {
       out[k] = sanitizeRow(v);
     }
     return out;
