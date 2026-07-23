@@ -24,9 +24,12 @@ export async function GET(request: NextRequest) {
       r.locktype, r.calllevel, r.capacity, r.priority, r.iptype, r.encrypt, r.protocol,
       r.remoteips, r.rtpforwardtype, r.signalport, r.signalportlocal, r.gatewaygroups, r.memo,
       r.mbx_id, r.clearingcustomer_id,
-      s.rewriterulesincallee, s.rewriterulesincaller, s.sipcodecs, s.timeoutinvite,
-      s.timeoutringing, s.callerblacklistpolicy, s.calleeblacklistpolicy,
-      s.callincallerprefixesallow, s.callincalleeprefixesallow, s.callinmappinggateways,
+      s.rewriterulesincallee, s.rewriterulesincaller, s.sipcodecs, s.h323codecs,
+      s.timeoutinvite, s.timeoutringing, s.callerblacklistpolicy, s.calleeblacklistpolicy,
+      s.callincallerprefixesallow, s.callincallerprefixes, s.callincalleeprefixesallow, s.callincalleeprefixes,
+      s.callinforwardprefixes, s.denycallercallee,
+      s.scheduledcapacity, s.scheduledpriority, s.scheduledcallinprefixes, s.scheduledrewriterulesin,
+      s.callinmappinggateways,
       clr.name AS clearing_name, clr.account AS clearing_account, clr.money AS clearing_balance,
       clr.limitmoney AS clearing_limit
       FROM e_gatewayrouting r
@@ -62,12 +65,21 @@ export async function GET(request: NextRequest) {
       rewriteInCallee: r.rewriterulesincallee || null,
       rewriteInCaller: r.rewriterulesincaller || null,
       sipCodecs: r.sipcodecs || null,
+      h323Codecs: r.h323codecs || null,
       timeoutInvite: r.timeoutinvite,
       timeoutRinging: r.timeoutringing,
       callerBlacklistPolicy: r.callerblacklistpolicy || 0,
       calleeBlacklistPolicy: r.calleeblacklistpolicy || 0,
       callerPrefixesAllow: r.callincallerprefixesallow || 0,
+      callerPrefixes: r.callincallerprefixes || "",
       calleePrefixesAllow: r.callincalleeprefixesallow || 0,
+      calleePrefixes: r.callincalleeprefixes || "",
+      forwardingPrefixes: r.callinforwardprefixes || "",
+      denyCallerCallee: r.denycallercallee || "",
+      scheduledCapacity: r.scheduledcapacity || "",
+      scheduledPriority: r.scheduledpriority || "",
+      scheduledCallinPrefixes: r.scheduledcallinprefixes || "",
+      scheduledRewriteRulesIn: r.scheduledrewriterulesin || "",
       mappingGatewayNames: r.callinmappinggateways || "",
       clearingName: r.clearing_name || "",
       clearingAccount: r.clearing_account || "",
@@ -118,11 +130,28 @@ export async function POST(request: NextRequest) {
       ]
     );
 
-    // Create corresponding settings row (required for VOS3000 to route calls)
+    // Create corresponding settings row with all provided fields
     try {
       await executeVos(
-        "INSERT INTO e_gatewayroutingsetting (gatewayrouting_id) VALUES (?)",
-        [nextId]
+        `INSERT INTO e_gatewayroutingsetting (gatewayrouting_id, callincallerprefixesallow, callincallerprefixes,
+          callincalleeprefixesallow, callincalleeprefixes, callinforwardprefixes,
+          callerblacklistpolicy, calleeblacklistpolicy,
+          rewriterulesincallee, rewriterulesincaller, denycallercallee,
+          scheduledcapacity, scheduledpriority, scheduledcallinprefixes, scheduledrewriterulesin,
+          sipcodecs, h323codecs, timeoutinvite, timeoutringing)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        [nextId,
+          body.callerPrefixesAllow ?? 1, body.callerPrefixes || "",
+          body.calleePrefixesAllow ?? 1, body.calleePrefixes || "",
+          body.forwardingPrefixes || "",
+          body.callerBlacklistPolicy ?? 0, body.calleeBlacklistPolicy ?? 0,
+          body.rewriteRulesInCaller || "", body.rewriteRulesInCallee || "",
+          body.denyCallerCallee || "",
+          body.scheduledCapacity || "", body.scheduledPriority || "",
+          body.scheduledCallinPrefixes || "", body.scheduledRewriteRulesIn || "",
+          body.sipCodecs || "", body.h323Codecs || "",
+          body.timeoutInvite ?? 30, body.timeoutRinging ?? 60,
+        ]
       );
     } catch (settingsErr) {
       // Clean up the gateway if settings can't be created

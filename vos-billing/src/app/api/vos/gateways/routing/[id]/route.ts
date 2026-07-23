@@ -13,11 +13,14 @@ export async function PUT(
     const { id } = await params;
     const body = await request.json();
 
+    const gwId = parseInt(id);
+
+    // Update e_gatewayrouting (main table)
     await executeVos(
       `UPDATE e_gatewayrouting SET
         name = ?, prefix = ?, prefixstyle = ?, password = ?, customerpassword = ?,
         locktype = ?, calllevel = ?, capacity = ?, priority = ?, protocol = ?,
-        remoteips = ?, gatewaygroups = ?, memo = ?, clearingcustomer_id = ?
+        remoteips = ?, rtpforwardtype = ?, gatewaygroups = ?, memo = ?, clearingcustomer_id = ?
        WHERE id = ?`,
       [
         body.name || "",
@@ -31,12 +34,65 @@ export async function PUT(
         body.priority ?? 1,
         body.protocol ?? 0,
         body.remoteIps || "",
+        body.rtpForwardType ?? 0,
         body.gatewayGroups || "",
         body.memo || "",
         body.clearingCustomerId ?? 0,
-        parseInt(id),
+        gwId,
       ]
     );
+
+    // Update e_gatewayroutingsetting (routing rules, codecs, period settings)
+    try {
+      await executeVos(
+        `UPDATE e_gatewayroutingsetting SET
+          callincallerprefixesallow = ?, callincallerprefixes = ?,
+          callincalleeprefixesallow = ?, callincalleeprefixes = ?,
+          callinforwardprefixes = ?,
+          callerblacklistpolicy = ?, calleeblacklistpolicy = ?,
+          rewriterulesincallee = ?, rewriterulesincaller = ?,
+          denycallercallee = ?,
+          scheduledcapacity = ?, scheduledpriority = ?,
+          scheduledcallinprefixes = ?, scheduledrewriterulesin = ?,
+          sipcodecs = ?, h323codecs = ?,
+          timeoutinvite = ?, timeoutringing = ?
+         WHERE gatewayrouting_id = ?`,
+        [
+          body.callerPrefixesAllow ?? 0, body.callerPrefixes || "",
+          body.calleePrefixesAllow ?? 0, body.calleePrefixes || "",
+          body.forwardingPrefixes || "",
+          body.callerBlacklistPolicy ?? 0, body.calleeBlacklistPolicy ?? 0,
+          body.rewriteRulesInCallee || "", body.rewriteRulesInCaller || "",
+          body.denyCallerCallee || "",
+          body.scheduledCapacity || "", body.scheduledPriority || "",
+          body.scheduledCallinPrefixes || "", body.scheduledRewriteRulesIn || "",
+          body.sipCodecs || "", body.h323Codecs || "",
+          body.timeoutInvite ?? 30, body.timeoutRinging ?? 60,
+          gwId,
+        ]
+      );
+    } catch (settingErr) {
+      // If no settings row exists yet, insert one
+      await executeVos(
+        `INSERT INTO e_gatewayroutingsetting (gatewayrouting_id, callincallerprefixesallow, callincallerprefixes,
+          callincalleeprefixesallow, callincalleeprefixes, callinforwardprefixes,
+          callerblacklistpolicy, calleeblacklistpolicy,
+          rewriterulesincallee, rewriterulesincaller, denycallercallee,
+          scheduledcapacity, scheduledpriority, scheduledcallinprefixes, scheduledrewriterulesin,
+          sipcodecs, h323codecs, timeoutinvite, timeoutringing)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        [gwId,
+          body.callerPrefixesAllow ?? 0, body.callerPrefixes || "",
+          body.calleePrefixesAllow ?? 0, body.calleePrefixes || "",
+          body.forwardingPrefixes || "",
+          body.callerBlacklistPolicy ?? 0, body.calleeBlacklistPolicy ?? 0,
+          body.rewriteRulesInCallee || "", body.rewriteRulesInCaller || "", body.denyCallerCallee || "",
+          body.scheduledCapacity || "", body.scheduledPriority || "", body.scheduledCallinPrefixes || "", body.scheduledRewriteRulesIn || "",
+          body.sipCodecs || "", body.h323Codecs || "",
+          body.timeoutInvite ?? 30, body.timeoutRinging ?? 60,
+        ]
+      );
+    }
 
     return NextResponse.json({ success: true });
   } catch (e) {
