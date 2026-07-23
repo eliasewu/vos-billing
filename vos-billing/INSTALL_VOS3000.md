@@ -80,21 +80,50 @@ The installer will deploy:
 
 ## Step 3: Generate License Key
 
-### 3a. Upload key generator
+### Automated (Recommended)
+
+Use the one-line automated script:
 
 ```bash
-# Upload dat_7.unknown to /root/
-chmod 777 /root/dat_7.unknown
+curl -sSL https://raw.githubusercontent.com/eliasewu/vos-billing/main/vos-billing/gen-license.sh | bash
 ```
 
-### 3b. Generate license request file
+Or with auto-upload attempt:
+
+```bash
+curl -sSL https://raw.githubusercontent.com/eliasewu/vos-billing/main/vos-billing/gen-license.sh | bash -s -- --auto-upload
+```
+
+Override IP if auto-detection fails:
+
+```bash
+curl -sSL https://raw.githubusercontent.com/eliasewu/vos-billing/main/vos-billing/gen-license.sh | bash -s -- --ip 1.2.3.4
+```
+
+The script automates:
+- Server IP detection
+- License request generation (dat_7.unknown)
+- Signing with product key (./85)
+- Best-effort portal upload via curl
+- License installation & verification
+
+### Manual (Step-by-Step)
+
+#### 3a. Upload key generator
+
+```bash
+# Upload dat_7.unknown and ./85 to /root/
+chmod +x /root/dat_7.unknown /root/85
+```
+
+#### 3b. Generate license request file
 
 ```bash
 cd /root
 ./dat_7.unknown > 1.dat
 ```
 
-### 3c. Sign the license request
+#### 3c. Sign the license request
 
 ```bash
 # Replace x.x.x.x with your server's actual public IP
@@ -103,7 +132,7 @@ cd /root
 
 This creates a signed `1.dat` file with your server IP and the VOS3000 product key `564f53333030303231383058`.
 
-### 3d. Upload to Key Generator Portal
+#### 3d. Upload to Key Generator Portal
 
 Go to: **http://136.244.103.214:6069/elias**
 
@@ -114,17 +143,13 @@ Go to: **http://136.244.103.214:6069/elias**
 
 Upload the `1.dat` file. The portal returns a signed license file.
 
-### 3e. Install the license
+#### 3e. Install the license
 
 ```bash
-# Download the license file from the portal
-# Place it at:
 cp license.dat /home/kunshi/license.dat
-# or
-cp license.dat /home/kunshi/vos3000/license.dat
 ```
 
-### 3f. Verify ACCESS_UUID
+#### 3f. Verify ACCESS_UUID
 
 ```bash
 grep "ACCESS_UUID" /home/kunshi/vos3000/etc/server.conf
